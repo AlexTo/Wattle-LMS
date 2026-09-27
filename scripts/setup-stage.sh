@@ -17,11 +17,15 @@ set -euo pipefail
 # - creates or updates the GitHub deploy role assumed by the workflow
 # - creates or updates the CloudFormation execution role passed to
 #   `cdk deploy --role-arn`
+# - creates or updates the repository's Docker login role (shared by every
+#   stage), which CI assumes only to authenticate image pulls from Amazon ECR
+#   Public, whose anonymous pulls shared GitHub runner IPs can rate-limit
 # - creates or updates the stage's permissions boundary policy, which every
 #   role the execution role creates must carry
 # - optionally bootstraps CDK in the regions the stage deploys to
-# - optionally creates the matching GitHub environment and sets its variables
-#   (requires an authenticated `gh` CLI)
+# - optionally creates the matching GitHub environment and sets its variables,
+#   plus the repository's AWS_DOCKER_LOGIN_ROLE_ARN variable (requires an
+#   authenticated `gh` CLI)
 # - optionally configures custom domains and their ACM certificates for the
 #   APIs, portals and lesson media, plus (when lesson media has a domain) the
 #   shared parent domain HLS playback's signed cookies need, stored as
@@ -65,7 +69,7 @@ set -euo pipefail
 #   <STAGE>_LESSON_MEDIA_COOKIE_DOMAIN
 #                        shared cookie domain default for HLS playback (same
 #                        fallback order as above)
-#   DEPLOY_ROLE_NAME, EXECUTION_ROLE_NAME
+#   DEPLOY_ROLE_NAME, EXECUTION_ROLE_NAME, DOCKER_LOGIN_ROLE_NAME
 #
 # This script is designed to be idempotent and safe to run multiple times.
 
@@ -480,6 +484,9 @@ readonly COMPACT_PREFIX="${TARGET_STAGE//-/}"
 # role's IAM permissions (scoped to `role/<stage>-*`) can't modify either role.
 readonly DEPLOY_ROLE_NAME="${DEPLOY_ROLE_NAME:-github-deploy-$TARGET_STAGE}"
 readonly EXECUTION_ROLE_NAME="${EXECUTION_ROLE_NAME:-cfn-execution-$TARGET_STAGE}"
+# One per repository rather than per stage: CI jobs outside any stage's
+# environment (e.g. ci.yml's Trivy scan) pull images too.
+readonly DOCKER_LOGIN_ROLE_NAME="${DOCKER_LOGIN_ROLE_NAME:-github-docker-login-${GITHUB_REPOSITORY#*/}}"
 # Every role the stage's stacks create must carry this boundary (the deploy
 # workflow synthesizes with it applied), which caps what the execution role can
 # grant through them. Must match stagePermissionsBoundaryName() in
@@ -704,7 +711,9 @@ cleanup() {
     "${DEPLOY_POLICY_FILE:-}" \
     "${EXECUTION_TRUST_POLICY_FILE:-}" \
     "${EXECUTION_POLICY_FILE:-}" \
-    "${BOUNDARY_POLICY_FILE:-}"
+    "${BOUNDARY_POLICY_FILE:-}" \
+    "${DOCKER_LOGIN_TRUST_POLICY_FILE:-}" \
+    "${DOCKER_LOGIN_POLICY_FILE:-}"
 }
 
 trap cleanup EXIT
@@ -722,6 +731,7 @@ confirm() {
   echo "  - Deploy role:   $DEPLOY_ROLE_NAME"
   echo "  - Exec role:     $EXECUTION_ROLE_NAME"
   echo "  - Boundary:      $BOUNDARY_POLICY_NAME"
+  echo "  - Docker login:  $DOCKER_LOGIN_ROLE_NAME (shared by every stage)"
   if [[ ${#BOOTSTRAP_REGIONS[@]} -gt 0 ]]; then
     echo "  - CDK bootstrap: ${BOOTSTRAP_REGIONS[*]}"
   fi
@@ -732,6 +742,7 @@ confirm() {
     echo "  - GitHub var:    AUTO_DEPLOY_STAGE=$TARGET_STAGE"
   fi
   if [[ "$CONFIGURE_GITHUB" == true ]]; then
+    echo "  - GitHub var:    AWS_DOCKER_LOGIN_ROLE_ARN (repository)"
     local variable
     for variable in "${DOMAIN_VARIABLES[@]}"; do
       echo "  - GitHub var:    $variable"
@@ -888,10 +899,16 @@ EOF
 EOF
 }
 
+# upsert_role <name> <trust policy file> <description> [stage tag]: the stage
+# tag defaults to the target stage; pass an empty one for a role every stage
+# shares.
 upsert_role() {
   local role_name="$1"
   local trust_policy_file="$2"
   local description="$3"
+  local stage="${4-$TARGET_STAGE}"
+  local -a tags=(Key=Project,Value=discava Key=ManagedBy,Value=setup-stage.sh)
+  [[ -z "$stage" ]] || tags+=(Key=Stage,Value="$stage")
 
   if aws iam get-role --role-name "$role_name" >/dev/null 2>&1; then
     echo "Updating trust policy for role: $role_name"
@@ -904,10 +921,7 @@ upsert_role() {
       --role-name "$role_name" \
       --assume-role-policy-document "file://$trust_policy_file" \
       --description "$description" \
-      --tags \
-        Key=Project,Value=discava \
-        Key=ManagedBy,Value=setup-stage.sh \
-        Key=Stage,Value="$TARGET_STAGE" >/dev/null
+      --tags "${tags[@]}" >/dev/null
   fi
 }
 
@@ -917,6 +931,72 @@ attach_inline_policy() {
     --role-name "$DEPLOY_ROLE_NAME" \
     --policy-name DiscavaGitHubDeployPermissions \
     --policy-document "file://$DEPLOY_POLICY_FILE"
+}
+
+create_docker_login_policy_files() {
+  DOCKER_LOGIN_TRUST_POLICY_FILE="$(mktemp -t "${DOCKER_LOGIN_ROLE_NAME}.trust.XXXXXX.json")"
+  DOCKER_LOGIN_POLICY_FILE="$(mktemp -t "${DOCKER_LOGIN_ROLE_NAME}.policy.XXXXXX.json")"
+
+  # Any workflow in the repository may assume it: all it grants is a pull
+  # token for public images.
+  cat >"$DOCKER_LOGIN_TRUST_POLICY_FILE" <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:$AWS_PARTITION:iam::$ACCOUNT_ID:oidc-provider/$OIDC_PROVIDER_HOST"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "$OIDC_PROVIDER_HOST:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "$OIDC_PROVIDER_HOST:sub": "$OIDC_SUBJECT_PREFIX:*"
+        }
+      }
+    }
+  ]
+}
+EOF
+
+  # Neither action supports resource-level permissions. The bearer token is
+  # restricted to ECR Public in its own statement, since that condition key is
+  # absent from (and would so deny) GetAuthorizationToken requests.
+  cat >"$DOCKER_LOGIN_POLICY_FILE" <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EcrPublicAuthorizationToken",
+      "Effect": "Allow",
+      "Action": "ecr-public:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "EcrPublicBearerToken",
+      "Effect": "Allow",
+      "Action": "sts:GetServiceBearerToken",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "sts:AWSServiceName": "ecr-public.amazonaws.com"
+        }
+      }
+    }
+  ]
+}
+EOF
+}
+
+attach_docker_login_policy() {
+  echo "Attaching Docker login permissions to: $DOCKER_LOGIN_ROLE_NAME"
+  aws iam put-role-policy \
+    --role-name "$DOCKER_LOGIN_ROLE_NAME" \
+    --policy-name DiscavaDockerLoginPermissions \
+    --policy-document "file://$DOCKER_LOGIN_POLICY_FILE"
 }
 
 attach_execution_policy() {
@@ -1597,6 +1677,7 @@ configure_github_environment() {
   if [[ "$SET_AUTO_DEPLOY" == true ]]; then
     gh variable set AUTO_DEPLOY_STAGE --repo "$GITHUB_REPOSITORY" --body "$TARGET_STAGE"
   fi
+  gh variable set AWS_DOCKER_LOGIN_ROLE_ARN --repo "$GITHUB_REPOSITORY" --body "$DOCKER_LOGIN_ROLE_ARN"
 
   local variable
   for variable in "${DOMAIN_VARIABLES[@]}"; do
@@ -1622,6 +1703,8 @@ print_next_steps() {
     for variable in "${DOMAIN_VARIABLES_TO_DELETE[@]}"; do
       echo "  Remove:     $variable"
     done
+    echo "and the repository variable:"
+    echo "  Variable:   AWS_DOCKER_LOGIN_ROLE_ARN=$DOCKER_LOGIN_ROLE_ARN"
     paragraph "To deploy it automatically whenever CI passes on main, also set the repository variable AUTO_DEPLOY_STAGE=$TARGET_STAGE."
     echo ""
   fi
@@ -1638,6 +1721,7 @@ print_next_steps() {
 
 readonly DEPLOY_ROLE_ARN="arn:$AWS_PARTITION:iam::$ACCOUNT_ID:role/$DEPLOY_ROLE_NAME"
 readonly EXECUTION_ROLE_ARN="arn:$AWS_PARTITION:iam::$ACCOUNT_ID:role/$EXECUTION_ROLE_NAME"
+readonly DOCKER_LOGIN_ROLE_ARN="arn:$AWS_PARTITION:iam::$ACCOUNT_ID:role/$DOCKER_LOGIN_ROLE_NAME"
 
 confirm
 bootstrap_cdk
@@ -1654,6 +1738,13 @@ upsert_role \
   "$EXECUTION_TRUST_POLICY_FILE" \
   "CloudFormation execution role for $GITHUB_REPOSITORY ($TARGET_STAGE)"
 attach_execution_policy
+create_docker_login_policy_files
+upsert_role \
+  "$DOCKER_LOGIN_ROLE_NAME" \
+  "$DOCKER_LOGIN_TRUST_POLICY_FILE" \
+  "GitHub Actions ECR Public login role for $GITHUB_REPOSITORY" \
+  ""
+attach_docker_login_policy
 if [[ "$CONFIGURE_GITHUB" == true ]]; then
   configure_github_environment
 fi

@@ -139,6 +139,9 @@ const runSetup = (settings: OidcSettings, env: Record<string, string> = {}) => {
     ghVariableCalls: calls.filter((call) => call.startsWith('gh variable ')),
     trustedSubject,
     executionPolicy,
+    /** A policy document the script handed to AWS, by its file name. */
+    policyDocument: (name: string) =>
+      JSON.parse(readFileSync(join(out, name), 'utf8')),
   };
 };
 
@@ -262,6 +265,82 @@ describe('setup-stage.sh execution policy', { timeout: 60_000 }, () => {
         Resource:
           'arn:aws:scheduler:ap-southeast-2:111122223333:schedule/discavadevelopment*/*',
       }),
+    );
+  });
+});
+
+describe('setup-stage.sh Docker login role', { timeout: 60_000 }, () => {
+  const ROLE_NAME = 'github-docker-login-discava';
+
+  it('lets any workflow in the repository assume it', () => {
+    const { status, policyDocument } = runSetup({
+      kind: 'response',
+      useDefault: true,
+      prefix: IMMUTABLE_PREFIX,
+    });
+
+    expect(status).toBe(0);
+    expect(
+      policyDocument(`${ROLE_NAME}.trust.json`).Statement[0].Condition,
+    ).toEqual({
+      StringEquals: {
+        'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
+      },
+      StringLike: {
+        'token.actions.githubusercontent.com:sub': `${IMMUTABLE_PREFIX}:*`,
+      },
+    });
+  });
+
+  it('only grants an ECR Public pull token', () => {
+    const { status, policyDocument } = runSetup({
+      kind: 'response',
+      useDefault: true,
+    });
+
+    expect(status).toBe(0);
+    expect(policyDocument(`${ROLE_NAME}.policy.json`).Statement).toEqual([
+      expect.objectContaining({
+        Effect: 'Allow',
+        Action: 'ecr-public:GetAuthorizationToken',
+        Resource: '*',
+      }),
+      expect.objectContaining({
+        Effect: 'Allow',
+        Action: 'sts:GetServiceBearerToken',
+        Resource: '*',
+        Condition: {
+          StringEquals: { 'sts:AWSServiceName': 'ecr-public.amazonaws.com' },
+        },
+      }),
+    ]);
+  });
+
+  it('is created without a stage tag, since every stage shares it', () => {
+    const { status, iamCalls } = runSetup({
+      kind: 'response',
+      useDefault: true,
+    });
+
+    expect(status).toBe(0);
+    const createRole = iamCalls.find(
+      (call) =>
+        call.startsWith('aws iam create-role') &&
+        call.includes(`--role-name ${ROLE_NAME} `),
+    );
+    expect(createRole).toContain('Key=Project,Value=discava');
+    expect(createRole).not.toContain('Key=Stage');
+  });
+
+  it('stores its ARN as a repository variable', () => {
+    const { status, ghVariableCalls } = runSetup({
+      kind: 'response',
+      useDefault: true,
+    });
+
+    expect(status).toBe(0);
+    expect(ghVariableCalls).toContain(
+      `gh variable set AWS_DOCKER_LOGIN_ROLE_ARN --repo ${REPOSITORY} --body arn:aws:iam::111122223333:role/${ROLE_NAME}`,
     );
   });
 });

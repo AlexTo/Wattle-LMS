@@ -70,6 +70,8 @@ jobs:
 
       - uses: ./.github/actions/init-monorepo
         with:
+          # `pnpm trivy` pulls the Trivy image from ECR Public.
+          aws-docker-login-role-arn: ${{ vars.AWS_DOCKER_LOGIN_ROLE_ARN }}
           setup-uv: "false"
           set-nx-shas: "false"
 
