@@ -1,11 +1,11 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import type {
   StageCredentials,
   StagesConfig,
-} from '@wattle/common-infra-config';
+} from '@discava/common-infra-config';
 
 /**
  * Looks up credentials for a given project + stage combination.

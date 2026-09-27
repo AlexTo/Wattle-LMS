@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -21,11 +21,11 @@ export default {
     },
     source: {
       spdx: 'Apache-2.0',
-      copyrightHolder: 'Wattle LMS Contributors',
+      copyrightHolder: 'Discava Contributors',
       header: {
         content: {
           lines: [
-            'Copyright Wattle LMS Contributors. All Rights Reserved.',
+            'Copyright Discava Contributors. All Rights Reserved.',
             'SPDX-License-Identifier: Apache-2.0',
           ],
         },

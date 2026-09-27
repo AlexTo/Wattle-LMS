@@ -1,5 +1,5 @@
 {
-  "name": "@wattle/common-constructs",
+  "name": "@discava/common-constructs",
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/common/constructs/src",
   "projectType": "library",
@@ -11,13 +11,13 @@
     "assemble": {
       "dependsOn": [
         "compile",
-        "@wattle/core-table:assemble",
-        "@wattle/core-api:assemble",
-        "@wattle/student-portal:assemble",
-        "@wattle/events:assemble",
-        "@wattle/instructor-portal:assemble",
-        "@wattle/admin-portal:assemble",
-        "@wattle/instructor-api:assemble"
+        "@discava/core-table:assemble",
+        "@discava/core-api:assemble",
+        "@discava/student-portal:assemble",
+        "@discava/events:assemble",
+        "@discava/instructor-portal:assemble",
+        "@discava/admin-portal:assemble",
+        "@discava/instructor-api:assemble"
       ]
     },
     "build": {
@@ -25,13 +25,13 @@
         "lint",
         "compile",
         "test",
-        "@wattle/core-table:build",
-        "@wattle/core-api:build",
-        "@wattle/student-portal:build",
-        "@wattle/events:build",
-        "@wattle/instructor-portal:build",
-        "@wattle/admin-portal:build",
-        "@wattle/instructor-api:build"
+        "@discava/core-table:build",
+        "@discava/core-api:build",
+        "@discava/student-portal:build",
+        "@discava/events:build",
+        "@discava/instructor-portal:build",
+        "@discava/admin-portal:build",
+        "@discava/instructor-api:build"
       ]
     },
     "compile": {
@@ -63,7 +63,7 @@
       "dependsOn": [
         "format",
         {
-          "projects": ["@wattle/source"],
+          "projects": ["@discava/source"],
           "target": "license-check"
         }
       ],

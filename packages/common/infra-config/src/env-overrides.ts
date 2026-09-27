@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import type { StageComponents, StageConfig } from './stages.types.js';
@@ -80,7 +80,7 @@ const COMPONENT_FIELDS: Record<
 /**
  * Converts a stage name or camelCase identifier into the SCREAMING_SNAKE_CASE
  * segment used in override env var names, e.g. `'studentPortal'` ->
- * `'STUDENT_PORTAL'`, `'wattle-development'` -> `'WATTLE_DEVELOPMENT'`.
+ * `'STUDENT_PORTAL'`, `'discava-development'` -> `'DISCAVA_DEVELOPMENT'`.
  */
 function toEnvSegment(value: string): string {
   return value
@@ -117,7 +117,7 @@ function parseEnvValue(
  * `<STAGE>_REGION` / `<STAGE>_ACCOUNT`) environment variables, each segment
  * SCREAMING_SNAKE_CASE. Env overrides take priority over `base`.
  *
- * `@wattle/infra`'s `synth` target (packages/infra/project.json) hashes
+ * `@discava/infra`'s `synth` target (packages/infra/project.json) hashes
  * matching env vars into its cache key so a changed override busts the
  * cache -- its grep pattern lists stage names by hand and needs updating
  * alongside any new entry in stages.config.ts.

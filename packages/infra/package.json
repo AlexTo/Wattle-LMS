@@ -1,5 +1,5 @@
 {
-  "name": "@wattle/infra",
+  "name": "@discava/infra",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -8,8 +8,8 @@
     "constructs": "catalog:",
     "source-map-support": "catalog:",
     "tslib": "^2.3.0",
-    "@wattle/common-constructs": "workspace:*",
-    "@wattle/common-infra-config": "workspace:*"
+    "@discava/common-constructs": "workspace:*",
+    "@discava/common-infra-config": "workspace:*"
   },
   "devDependencies": {},
   "license": "Apache-2.0"

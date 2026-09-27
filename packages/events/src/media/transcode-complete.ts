@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,8 +12,8 @@ import { EventBridgeSchema } from '@aws-lambda-powertools/parser/schemas';
 import { Tracer } from '@aws-lambda-powertools/tracer';
 import { captureLambdaHandler } from '@aws-lambda-powertools/tracer/middleware';
 import { DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { createCoreTableService } from '@discava/core-table';
 import middy from '@middy/core';
-import { createCoreTableService } from '@wattle/core-table';
 import type { Context } from 'aws-lambda';
 import { z } from 'zod';
 import { resolveLessonMediaUploadBucketName } from '../lib/runtime-config.js';
@@ -31,7 +31,7 @@ const s3Client = new S3Client({});
 
 // Memoized across invocations on a warm Lambda, same as the tRPC APIs'
 // core-table plugin -- the DynamoDB client and resolved table name it
-// depends on are already memoized in @wattle/core-table.
+// depends on are already memoized in @discava/core-table.
 let coreTablePromise: ReturnType<typeof createCoreTableService> | undefined;
 
 const getCoreTable = () => {

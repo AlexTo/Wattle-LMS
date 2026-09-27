@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
 #
-# Copyright Wattle LMS Contributors. All Rights Reserved.
+# Copyright Discava Contributors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 set -euo pipefail
 
-# Guided deployment setup for a Wattle LMS stage.
+# Guided deployment setup for a Discava stage.
 #
 # Run this once per deployment stage (as defined in
 # packages/common/infra-config/src/stages.config.ts), from a clone of the
@@ -54,7 +54,7 @@ set -euo pipefail
 #   AWS_REGION           used when the stage config sets no region
 #   <STAGE>_<COMPONENT>_DOMAIN_NAME(S), <STAGE>_<COMPONENT>_CERTIFICATE_ARN
 #                        custom domain defaults, e.g.
-#                        WATTLE_DEVELOPMENT_CORE_API_DOMAIN_NAME (otherwise
+#                        DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME (otherwise
 #                        the stage's config, then the GitHub environment's
 #                        current variables)
 #   <STAGE>_LESSON_MEDIA_COOKIE_DOMAIN
@@ -212,7 +212,7 @@ github_cli_ready() {
 }
 
 # SCREAMING_SNAKE_CASE segment used in stage config override variable names,
-# e.g. wattle-development -> WATTLE_DEVELOPMENT. Must match toEnvSegment() in
+# e.g. discava-development -> DISCAVA_DEVELOPMENT. Must match toEnvSegment() in
 # packages/common/infra-config/src/env-overrides.ts.
 to_env_segment() {
   printf '%s' "$1" | sed -E 's/[^a-zA-Z0-9]+/_/g; s/([a-z0-9])([A-Z])/\1_\2/g' | tr '[:lower:]' '[:upper:]'
@@ -769,7 +769,7 @@ EOF
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "CloudFormationDeployWattle",
+      "Sid": "CloudFormationDeployDiscava",
       "Effect": "Allow",
       "Action": [
         "cloudformation:CreateStack",
@@ -866,7 +866,7 @@ upsert_role() {
       --assume-role-policy-document "file://$trust_policy_file" \
       --description "$description" \
       --tags \
-        Key=Project,Value=wattle-lms \
+        Key=Project,Value=discava \
         Key=ManagedBy,Value=setup-stage.sh \
         Key=Stage,Value="$TARGET_STAGE" >/dev/null
   fi
@@ -876,7 +876,7 @@ attach_inline_policy() {
   echo "Attaching deploy permissions to: $DEPLOY_ROLE_NAME"
   aws iam put-role-policy \
     --role-name "$DEPLOY_ROLE_NAME" \
-    --policy-name WattleGitHubDeployPermissions \
+    --policy-name DiscavaGitHubDeployPermissions \
     --policy-document "file://$DEPLOY_POLICY_FILE"
 }
 
@@ -902,7 +902,7 @@ attach_execution_policy() {
       ]
     },
     {
-      "Sid": "S3BucketsForWattle",
+      "Sid": "S3BucketsForDiscava",
       "Effect": "Allow",
       "Action": [
         "s3:CreateBucket",
@@ -929,7 +929,7 @@ attach_execution_policy() {
       ]
     },
     {
-      "Sid": "S3ObjectsForWattle",
+      "Sid": "S3ObjectsForDiscava",
       "Effect": "Allow",
       "Action": [
         "s3:GetObject",
@@ -956,7 +956,7 @@ attach_execution_policy() {
       ]
     },
     {
-      "Sid": "LambdaForWattle",
+      "Sid": "LambdaForDiscava",
       "Effect": "Allow",
       "Action": [
         "lambda:CreateFunction",
@@ -989,7 +989,7 @@ attach_execution_policy() {
       ]
     },
     {
-      "Sid": "DynamoDbForWattle",
+      "Sid": "DynamoDbForDiscava",
       "Effect": "Allow",
       "Action": [
         "dynamodb:CreateTable",
@@ -1013,7 +1013,7 @@ attach_execution_policy() {
       ]
     },
     {
-      "Sid": "KmsKeysForWattle",
+      "Sid": "KmsKeysForDiscava",
       "Effect": "Allow",
       "Action": [
         "kms:CreateKey",
@@ -1035,7 +1035,7 @@ attach_execution_policy() {
       "Resource": "*"
     },
     {
-      "Sid": "CloudWatchLogsForWattle",
+      "Sid": "CloudWatchLogsForDiscava",
       "Effect": "Allow",
       "Action": [
         "logs:CreateLogGroup",
@@ -1054,7 +1054,7 @@ attach_execution_policy() {
       "Resource": "*"
     },
     {
-      "Sid": "CloudFrontForWattle",
+      "Sid": "CloudFrontForDiscava",
       "Effect": "Allow",
       "Action": [
         "cloudfront:CreateDistribution",
@@ -1077,7 +1077,7 @@ attach_execution_policy() {
       "Resource": "*"
     },
     {
-      "Sid": "ApiGatewayForWattle",
+      "Sid": "ApiGatewayForDiscava",
       "Effect": "Allow",
       "Action": [
         "apigateway:POST",
@@ -1091,7 +1091,7 @@ attach_execution_policy() {
       "Resource": "*"
     },
     {
-      "Sid": "WafV2ForWattle",
+      "Sid": "WafV2ForDiscava",
       "Effect": "Allow",
       "Action": [
         "wafv2:CreateWebACL",
@@ -1112,7 +1112,7 @@ attach_execution_policy() {
       "Resource": "*"
     },
     {
-      "Sid": "EventBridgeRulesForWattle",
+      "Sid": "EventBridgeRulesForDiscava",
       "Effect": "Allow",
       "Action": [
         "events:PutRule",
@@ -1129,7 +1129,7 @@ attach_execution_policy() {
       ]
     },
     {
-      "Sid": "SchedulerGroupsForWattle",
+      "Sid": "SchedulerGroupsForDiscava",
       "Effect": "Allow",
       "Action": [
         "scheduler:CreateScheduleGroup",
@@ -1153,7 +1153,7 @@ attach_execution_policy() {
       "Resource": "*"
     },
     {
-      "Sid": "MediaConvertJobTemplatesForWattle",
+      "Sid": "MediaConvertJobTemplatesForDiscava",
       "Effect": "Allow",
       "Action": [
         "mediaconvert:GetJobTemplate",
@@ -1168,7 +1168,7 @@ attach_execution_policy() {
       ]
     },
     {
-      "Sid": "AppConfigForWattle",
+      "Sid": "AppConfigForDiscava",
       "Effect": "Allow",
       "Action": [
         "appconfig:CreateApplication",
@@ -1200,7 +1200,7 @@ attach_execution_policy() {
       "Resource": "arn:$AWS_PARTITION:appconfig:$AWS_REGION:$ACCOUNT_ID:*"
     },
     {
-      "Sid": "ManageWattleRoles",
+      "Sid": "ManageDiscavaRoles",
       "Effect": "Allow",
       "Action": [
         "iam:DeleteRole",
@@ -1287,7 +1287,7 @@ attach_execution_policy() {
       "Resource": "*"
     },
     {
-      "Sid": "PassOnlyWattleRolesToServices",
+      "Sid": "PassOnlyDiscavaRolesToServices",
       "Effect": "Allow",
       "Action": "iam:PassRole",
       "Resource": [
@@ -1301,7 +1301,7 @@ EOF
   echo "Attaching execution policy to: $EXECUTION_ROLE_NAME"
   aws iam put-role-policy \
     --role-name "$EXECUTION_ROLE_NAME" \
-    --policy-name WattleCloudFormationExecutionPolicy \
+    --policy-name DiscavaCloudFormationExecutionPolicy \
     --policy-document "file://$EXECUTION_POLICY_FILE"
 }
 
@@ -1506,7 +1506,7 @@ EOF
       --policy-document "file://$BOUNDARY_POLICY_FILE" \
       --description "Permissions boundary for $TARGET_STAGE's IAM roles" \
       --tags \
-        Key=Project,Value=wattle-lms \
+        Key=Project,Value=discava \
         Key=ManagedBy,Value=setup-stage.sh \
         Key=Stage,Value="$TARGET_STAGE" >/dev/null
   fi

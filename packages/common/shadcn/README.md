@@ -1,4 +1,4 @@
-# @wattle/common-shadcn
+# @discava/common-shadcn
 
 This package centralises Shadcn UI components that are shared between your React websites.
 

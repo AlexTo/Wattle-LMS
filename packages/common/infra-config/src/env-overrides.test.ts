@@ -1,26 +1,26 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { applyEnvOverrides } from './env-overrides.js';
 import type { StageConfig } from './stages.types.js';
 
-const STAGE = 'wattle-test-stage';
+const STAGE = 'discava-test-stage';
 
 const ENV_KEYS = [
-  'WATTLE_TEST_STAGE_REGION',
-  'WATTLE_TEST_STAGE_ACCOUNT',
-  'WATTLE_TEST_STAGE_STUDENT_PORTAL_ENABLE_WAF',
-  'WATTLE_TEST_STAGE_STUDENT_PORTAL_DOMAIN_NAMES',
-  'WATTLE_TEST_STAGE_STUDENT_PORTAL_CERTIFICATE_ARN',
-  'WATTLE_TEST_STAGE_CORE_API_ENABLE_WAF',
-  'WATTLE_TEST_STAGE_CORE_API_DOMAIN_NAME',
-  'WATTLE_TEST_STAGE_CORE_API_CERTIFICATE_ARN',
-  'WATTLE_TEST_STAGE_INSTRUCTOR_PORTAL_DOMAIN_NAMES',
-  'WATTLE_TEST_STAGE_ADMIN_PORTAL_CERTIFICATE_ARN',
-  'WATTLE_TEST_STAGE_LESSON_MEDIA_DOMAIN_NAMES',
-  'WATTLE_TEST_STAGE_UNKNOWN_FIELD',
+  'DISCAVA_TEST_STAGE_REGION',
+  'DISCAVA_TEST_STAGE_ACCOUNT',
+  'DISCAVA_TEST_STAGE_STUDENT_PORTAL_ENABLE_WAF',
+  'DISCAVA_TEST_STAGE_STUDENT_PORTAL_DOMAIN_NAMES',
+  'DISCAVA_TEST_STAGE_STUDENT_PORTAL_CERTIFICATE_ARN',
+  'DISCAVA_TEST_STAGE_CORE_API_ENABLE_WAF',
+  'DISCAVA_TEST_STAGE_CORE_API_DOMAIN_NAME',
+  'DISCAVA_TEST_STAGE_CORE_API_CERTIFICATE_ARN',
+  'DISCAVA_TEST_STAGE_INSTRUCTOR_PORTAL_DOMAIN_NAMES',
+  'DISCAVA_TEST_STAGE_ADMIN_PORTAL_CERTIFICATE_ARN',
+  'DISCAVA_TEST_STAGE_LESSON_MEDIA_DOMAIN_NAMES',
+  'DISCAVA_TEST_STAGE_UNKNOWN_FIELD',
 ];
 
 afterEach(() => {
@@ -38,14 +38,14 @@ describe('applyEnvOverrides', () => {
   });
 
   it('ignores unrelated env vars', () => {
-    process.env.WATTLE_TEST_STAGE_UNKNOWN_FIELD = 'true';
+    process.env.DISCAVA_TEST_STAGE_UNKNOWN_FIELD = 'true';
     const base: StageConfig = {};
 
     expect(applyEnvOverrides(STAGE, base)).toEqual({});
   });
 
   it('overrides a boolean component field, taking priority over the base value', () => {
-    process.env.WATTLE_TEST_STAGE_STUDENT_PORTAL_ENABLE_WAF = 'false';
+    process.env.DISCAVA_TEST_STAGE_STUDENT_PORTAL_ENABLE_WAF = 'false';
     const base: StageConfig = {
       components: { studentPortal: { enableWaf: true } },
     };
@@ -56,15 +56,15 @@ describe('applyEnvOverrides', () => {
   });
 
   it('throws a clear error for an invalid boolean value', () => {
-    process.env.WATTLE_TEST_STAGE_CORE_API_ENABLE_WAF = 'nope';
+    process.env.DISCAVA_TEST_STAGE_CORE_API_ENABLE_WAF = 'nope';
 
     expect(() => applyEnvOverrides(STAGE, {})).toThrow(
-      /WATTLE_TEST_STAGE_CORE_API_ENABLE_WAF/,
+      /DISCAVA_TEST_STAGE_CORE_API_ENABLE_WAF/,
     );
   });
 
   it('overrides a string[] field as a comma-separated, trimmed list', () => {
-    process.env.WATTLE_TEST_STAGE_STUDENT_PORTAL_DOMAIN_NAMES =
+    process.env.DISCAVA_TEST_STAGE_STUDENT_PORTAL_DOMAIN_NAMES =
       'learn.example.com, www.learn.example.com ,,';
 
     expect(applyEnvOverrides(STAGE, {})).toEqual({
@@ -78,7 +78,7 @@ describe('applyEnvOverrides', () => {
 
   it('overrides a string field', () => {
     const arn = 'arn:aws:acm:us-east-1:123456789012:certificate/abc-123';
-    process.env.WATTLE_TEST_STAGE_STUDENT_PORTAL_CERTIFICATE_ARN = arn;
+    process.env.DISCAVA_TEST_STAGE_STUDENT_PORTAL_CERTIFICATE_ARN = arn;
 
     expect(applyEnvOverrides(STAGE, {})).toEqual({
       components: { studentPortal: { certificateArn: arn } },
@@ -86,8 +86,8 @@ describe('applyEnvOverrides', () => {
   });
 
   it('overrides top-level region and account', () => {
-    process.env.WATTLE_TEST_STAGE_REGION = 'us-east-1';
-    process.env.WATTLE_TEST_STAGE_ACCOUNT = 'test-account-id';
+    process.env.DISCAVA_TEST_STAGE_REGION = 'us-east-1';
+    process.env.DISCAVA_TEST_STAGE_ACCOUNT = 'test-account-id';
 
     expect(applyEnvOverrides(STAGE, {})).toEqual({
       region: 'us-east-1',
@@ -96,8 +96,8 @@ describe('applyEnvOverrides', () => {
   });
 
   it('merges multiple field overrides for the same component alongside unrelated base fields', () => {
-    process.env.WATTLE_TEST_STAGE_STUDENT_PORTAL_ENABLE_WAF = 'false';
-    process.env.WATTLE_TEST_STAGE_STUDENT_PORTAL_CERTIFICATE_ARN =
+    process.env.DISCAVA_TEST_STAGE_STUDENT_PORTAL_ENABLE_WAF = 'false';
+    process.env.DISCAVA_TEST_STAGE_STUDENT_PORTAL_CERTIFICATE_ARN =
       'arn:aws:acm:us-east-1:123456789012:certificate/abc';
     const base: StageConfig = {
       components: {
@@ -119,8 +119,8 @@ describe('applyEnvOverrides', () => {
   });
 
   it('overrides the singular domainName/certificateArn fields on an API component', () => {
-    process.env.WATTLE_TEST_STAGE_CORE_API_DOMAIN_NAME = 'api.example.com';
-    process.env.WATTLE_TEST_STAGE_CORE_API_CERTIFICATE_ARN =
+    process.env.DISCAVA_TEST_STAGE_CORE_API_DOMAIN_NAME = 'api.example.com';
+    process.env.DISCAVA_TEST_STAGE_CORE_API_CERTIFICATE_ARN =
       'arn:aws:acm:ap-southeast-2:123456789012:certificate/abc';
 
     expect(applyEnvOverrides(STAGE, {})).toEqual({
@@ -135,11 +135,11 @@ describe('applyEnvOverrides', () => {
   });
 
   it('overrides domain/certificate fields on the instructor/admin portals and lesson media bucket', () => {
-    process.env.WATTLE_TEST_STAGE_INSTRUCTOR_PORTAL_DOMAIN_NAMES =
+    process.env.DISCAVA_TEST_STAGE_INSTRUCTOR_PORTAL_DOMAIN_NAMES =
       'instruct.example.com';
-    process.env.WATTLE_TEST_STAGE_ADMIN_PORTAL_CERTIFICATE_ARN =
+    process.env.DISCAVA_TEST_STAGE_ADMIN_PORTAL_CERTIFICATE_ARN =
       'arn:aws:acm:us-east-1:123456789012:certificate/def';
-    process.env.WATTLE_TEST_STAGE_LESSON_MEDIA_DOMAIN_NAMES =
+    process.env.DISCAVA_TEST_STAGE_LESSON_MEDIA_DOMAIN_NAMES =
       'media.example.com';
 
     expect(applyEnvOverrides(STAGE, {})).toEqual({

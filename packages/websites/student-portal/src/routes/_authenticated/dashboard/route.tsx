@@ -1,36 +1,37 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { useQuery } from '@tanstack/react-query';
-import { createFileRoute, Link } from '@tanstack/react-router';
-import { Badge } from '@wattle/common-shadcn/components/ui/badge';
-import { Button } from '@wattle/common-shadcn/components/ui/button';
+
+import { Badge } from '@discava/common-shadcn/components/ui/badge';
+import { Button } from '@discava/common-shadcn/components/ui/button';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@wattle/common-shadcn/components/ui/card';
+} from '@discava/common-shadcn/components/ui/card';
 import {
   Carousel,
   CarouselContent,
   CarouselItem,
   CarouselNext,
   CarouselPrevious,
-} from '@wattle/common-shadcn/components/ui/carousel';
-import { Progress } from '@wattle/common-shadcn/components/ui/progress';
-import { Separator } from '@wattle/common-shadcn/components/ui/separator';
+} from '@discava/common-shadcn/components/ui/carousel';
+import { Progress } from '@discava/common-shadcn/components/ui/progress';
+import { Separator } from '@discava/common-shadcn/components/ui/separator';
 import {
   ToggleGroup,
   ToggleGroupItem,
-} from '@wattle/common-shadcn/components/ui/toggle-group';
+} from '@discava/common-shadcn/components/ui/toggle-group';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@wattle/common-shadcn/components/ui/tooltip';
+} from '@discava/common-shadcn/components/ui/tooltip';
+import { useQuery } from '@tanstack/react-query';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import {
   AlertCircle,
   ArrowRight,

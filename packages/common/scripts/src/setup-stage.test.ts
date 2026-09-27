@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 // @vitest-environment node
@@ -20,8 +20,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 const SCRIPT = join(REPO_ROOT, 'scripts/setup-stage.sh');
-const REPOSITORY = 'AlexTo/wattle-lms';
-const IMMUTABLE_PREFIX = 'repo:AlexTo@296212/wattle-lms@1340223666';
+const REPOSITORY = 'AlexTo/discava';
+const IMMUTABLE_PREFIX = 'repo:AlexTo@296212/discava@1340223666';
 
 /** How the stub `gh` answers the OIDC subject customization request. */
 type OidcSettings =
@@ -88,7 +88,7 @@ const runSetup = (settings: OidcSettings, env: Record<string, string> = {}) => {
   chmodSync(join(bin, 'aws'), 0o755);
   chmodSync(join(bin, 'gh'), 0o755);
 
-  const result = spawnSync('bash', [SCRIPT, '--yes', 'wattle-development'], {
+  const result = spawnSync('bash', [SCRIPT, '--yes', 'discava-development'], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
     env: {
@@ -104,7 +104,7 @@ const runSetup = (settings: OidcSettings, env: Record<string, string> = {}) => {
   const calls = existsSync(join(out, 'calls.log'))
     ? readFileSync(join(out, 'calls.log'), 'utf8').split('\n')
     : [];
-  const trustFile = join(out, 'github-deploy-wattle-development.trust.json');
+  const trustFile = join(out, 'github-deploy-discava-development.trust.json');
   const trustedSubject = existsSync(trustFile)
     ? JSON.parse(readFileSync(trustFile, 'utf8')).Statement[0].Condition
         .StringEquals['token.actions.githubusercontent.com:sub']
@@ -127,7 +127,7 @@ describe('setup-stage.sh OIDC subject', { timeout: 60_000 }, () => {
     });
 
     expect(trustedSubject).toBe(
-      `${IMMUTABLE_PREFIX}:environment:wattle-development`,
+      `${IMMUTABLE_PREFIX}:environment:discava-development`,
     );
   });
 
@@ -135,7 +135,7 @@ describe('setup-stage.sh OIDC subject', { timeout: 60_000 }, () => {
     const { trustedSubject } = runSetup({ kind: 'response', useDefault: true });
 
     expect(trustedSubject).toBe(
-      `repo:${REPOSITORY}:environment:wattle-development`,
+      `repo:${REPOSITORY}:environment:discava-development`,
     );
   });
 
@@ -166,7 +166,7 @@ describe('setup-stage.sh OIDC subject', { timeout: 60_000 }, () => {
 
     expect(output).toContain('assuming the default prefix');
     expect(trustedSubject).toBe(
-      `repo:${REPOSITORY}:environment:wattle-development`,
+      `repo:${REPOSITORY}:environment:discava-development`,
     );
   });
 
@@ -177,7 +177,7 @@ describe('setup-stage.sh OIDC subject', { timeout: 60_000 }, () => {
     );
 
     expect(trustedSubject).toBe(
-      'repo:someone/fork:environment:wattle-development',
+      'repo:someone/fork:environment:discava-development',
     );
   });
 });
@@ -200,23 +200,23 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
 
   it('stores a domain with the issued certificate found for it', () => {
     const { status, ghVariableCalls } = runSetup(GH_READY, {
-      WATTLE_DEVELOPMENT_CORE_API_DOMAIN_NAME: 'api.example.com',
+      DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME: 'api.example.com',
       ACM_CERTIFICATES: `${REGIONAL_CERTIFICATE_ARN}\\t*.example.com,example.com`,
       ACM_DESCRIBE: 'ISSUED\\tRSA-2048\\t*.example.com,example.com',
     });
 
     expect(status).toBe(0);
     expect(ghVariableCalls).toContain(
-      `gh variable set WATTLE_DEVELOPMENT_CORE_API_DOMAIN_NAME --repo ${REPOSITORY} --env wattle-development --body api.example.com`,
+      `gh variable set DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME --repo ${REPOSITORY} --env discava-development --body api.example.com`,
     );
     expect(ghVariableCalls).toContain(
-      `gh variable set WATTLE_DEVELOPMENT_CORE_API_CERTIFICATE_ARN --repo ${REPOSITORY} --env wattle-development --body ${REGIONAL_CERTIFICATE_ARN}`,
+      `gh variable set DISCAVA_DEVELOPMENT_CORE_API_CERTIFICATE_ARN --repo ${REPOSITORY} --env discava-development --body ${REGIONAL_CERTIFICATE_ARN}`,
     );
   });
 
   it('finds ECDSA certificates, which ACM only lists when asked for', () => {
     const { status, ghVariableCalls } = runSetup(GH_READY, {
-      WATTLE_DEVELOPMENT_CORE_API_DOMAIN_NAME: 'api.example.com',
+      DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME: 'api.example.com',
       ACM_CERTIFICATES: `${REGIONAL_CERTIFICATE_ARN}\\t*.example.com`,
       ACM_KEY_TYPE: 'EC_prime256v1',
       ACM_DESCRIBE: 'ISSUED\\tEC-prime256v1\\t*.example.com',
@@ -224,14 +224,14 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
 
     expect(status).toBe(0);
     expect(ghVariableCalls).toContain(
-      `gh variable set WATTLE_DEVELOPMENT_CORE_API_CERTIFICATE_ARN --repo ${REPOSITORY} --env wattle-development --body ${REGIONAL_CERTIFICATE_ARN}`,
+      `gh variable set DISCAVA_DEVELOPMENT_CORE_API_CERTIFICATE_ARN --repo ${REPOSITORY} --env discava-development --body ${REGIONAL_CERTIFICATE_ARN}`,
     );
   });
 
   it('rejects an RSA key over 2048 bits for an API', () => {
     const { status, output, iamCalls } = runSetup(GH_READY, {
-      WATTLE_DEVELOPMENT_CORE_API_DOMAIN_NAME: 'api.example.com',
-      WATTLE_DEVELOPMENT_CORE_API_CERTIFICATE_ARN: REGIONAL_CERTIFICATE_ARN,
+      DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME: 'api.example.com',
+      DISCAVA_DEVELOPMENT_CORE_API_CERTIFICATE_ARN: REGIONAL_CERTIFICATE_ARN,
       ACM_DESCRIBE: 'ISSUED\\tRSA-4096\\t*.example.com',
     });
 
@@ -242,7 +242,7 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
 
   it('stops before touching IAM when no issued certificate covers a domain', () => {
     const { status, output, iamCalls, ghVariableCalls } = runSetup(GH_READY, {
-      WATTLE_DEVELOPMENT_CORE_API_DOMAIN_NAME: 'api.example.com',
+      DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME: 'api.example.com',
       ACM_CERTIFICATES: `${REGIONAL_CERTIFICATE_ARN}\\tother.example.org`,
     });
 
@@ -254,22 +254,23 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
 
   it('stores comma-separated CloudFront domains', () => {
     const { status, ghVariableCalls } = runSetup(GH_READY, {
-      WATTLE_DEVELOPMENT_STUDENT_PORTAL_DOMAIN_NAMES:
+      DISCAVA_DEVELOPMENT_STUDENT_PORTAL_DOMAIN_NAMES:
         'example.com, www.example.com',
-      WATTLE_DEVELOPMENT_STUDENT_PORTAL_CERTIFICATE_ARN: CERTIFICATE_ARN,
+      DISCAVA_DEVELOPMENT_STUDENT_PORTAL_CERTIFICATE_ARN: CERTIFICATE_ARN,
       ACM_DESCRIBE: 'ISSUED\\tRSA-2048\\texample.com,*.example.com',
     });
 
     expect(status).toBe(0);
     expect(ghVariableCalls).toContain(
-      `gh variable set WATTLE_DEVELOPMENT_STUDENT_PORTAL_DOMAIN_NAMES --repo ${REPOSITORY} --env wattle-development --body example.com,www.example.com`,
+      `gh variable set DISCAVA_DEVELOPMENT_STUDENT_PORTAL_DOMAIN_NAMES --repo ${REPOSITORY} --env discava-development --body example.com,www.example.com`,
     );
   });
 
   it('rejects a CloudFront certificate outside us-east-1 before touching IAM', () => {
     const { status, output, iamCalls } = runSetup(GH_READY, {
-      WATTLE_DEVELOPMENT_LESSON_MEDIA_DOMAIN_NAMES: 'media.example.com',
-      WATTLE_DEVELOPMENT_LESSON_MEDIA_CERTIFICATE_ARN: REGIONAL_CERTIFICATE_ARN,
+      DISCAVA_DEVELOPMENT_LESSON_MEDIA_DOMAIN_NAMES: 'media.example.com',
+      DISCAVA_DEVELOPMENT_LESSON_MEDIA_CERTIFICATE_ARN:
+        REGIONAL_CERTIFICATE_ARN,
       ACM_DESCRIBE: 'ISSUED\\tRSA-2048\\t*.example.com',
     });
 
@@ -280,8 +281,8 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
 
   it("rejects a certificate that doesn't cover every domain", () => {
     const { status, output, iamCalls } = runSetup(GH_READY, {
-      WATTLE_DEVELOPMENT_ADMIN_PORTAL_DOMAIN_NAMES: 'admin.lms.example.com',
-      WATTLE_DEVELOPMENT_ADMIN_PORTAL_CERTIFICATE_ARN: CERTIFICATE_ARN,
+      DISCAVA_DEVELOPMENT_ADMIN_PORTAL_DOMAIN_NAMES: 'admin.lms.example.com',
+      DISCAVA_DEVELOPMENT_ADMIN_PORTAL_CERTIFICATE_ARN: CERTIFICATE_ARN,
       // A wildcard covers exactly one label.
       ACM_DESCRIBE: 'ISSUED\\tRSA-2048\\t*.example.com',
     });
@@ -293,7 +294,7 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
 
   it('rejects more than one domain for an API', () => {
     const { status, output } = runSetup(GH_READY, {
-      WATTLE_DEVELOPMENT_INSTRUCTOR_API_DOMAIN_NAME:
+      DISCAVA_DEVELOPMENT_INSTRUCTOR_API_DOMAIN_NAME:
         'a.example.com,b.example.com',
     });
 

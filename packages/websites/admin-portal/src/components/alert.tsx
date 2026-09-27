@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,7 +7,7 @@ import {
   AlertDescription,
   AlertTitle,
   Alert as ShadcnAlert,
-} from '@wattle/common-shadcn/components/ui/alert';
+} from '@discava/common-shadcn/components/ui/alert';
 import React from 'react';
 
 type AlertType = 'info' | 'error';

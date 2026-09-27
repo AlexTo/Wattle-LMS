@@ -1,5 +1,5 @@
 {
-  "name": "@wattle/events",
+  "name": "@discava/events",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -18,7 +18,7 @@
     "electrodb": "catalog:",
     "tslib": "^2.3.0",
     "zod": "catalog:",
-    "@wattle/core-table": "workspace:*"
+    "@discava/core-table": "workspace:*"
   },
   "devDependencies": {
     "@types/aws-lambda": "catalog:"

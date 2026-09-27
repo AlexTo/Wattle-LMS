@@ -1,18 +1,19 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { useQuery } from '@tanstack/react-query';
-import { createFileRoute, Link } from '@tanstack/react-router';
-import { Button } from '@wattle/common-shadcn/components/ui/button';
+
+import { Button } from '@discava/common-shadcn/components/ui/button';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@wattle/common-shadcn/components/ui/card';
-import { Input } from '@wattle/common-shadcn/components/ui/input';
+} from '@discava/common-shadcn/components/ui/card';
+import { Input } from '@discava/common-shadcn/components/ui/input';
+import { useQuery } from '@tanstack/react-query';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import {
   BarChart3,
   CalendarCheck,
@@ -262,7 +263,7 @@ function RouteComponent() {
               Spend less time searching. More time learning.
             </h2>
             <p className="mt-4 text-muted-foreground">
-              Wattle brings the important parts of your study day together in a
+              Discava brings the important parts of your study day together in a
               simple, welcoming workspace.
             </p>
           </div>
@@ -333,9 +334,7 @@ function RouteComponent() {
 
       <footer id="terms" className="border-t px-6 py-8 lg:px-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-5 text-sm text-muted-foreground sm:flex-row">
-          <p>
-            © {new Date().getFullYear()} Wattle LMS. Learning, made clearer.
-          </p>
+          <p>© {new Date().getFullYear()} Discava. Learning, made clearer.</p>
           <nav aria-label="Footer navigation" className="flex gap-6">
             <a
               className="transition-colors hover:text-foreground"
@@ -345,7 +344,7 @@ function RouteComponent() {
             </a>
             <a
               className="transition-colors hover:text-foreground"
-              href="mailto:support@wattlelms.com"
+              href="mailto:support@discava.com"
             >
               Contact
             </a>

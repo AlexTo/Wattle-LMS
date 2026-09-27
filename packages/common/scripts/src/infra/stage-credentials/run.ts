@@ -1,8 +1,8 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-import stagesConfig from '@wattle/common-infra-config';
+import stagesConfig from '@discava/common-infra-config';
 import { spawnSync } from 'child_process';
 import { buildCdkCommand } from './cdk-command.js';
 import {

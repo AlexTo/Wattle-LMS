@@ -1,5 +1,5 @@
 {
-  "name": "@wattle/common-shadcn",
+  "name": "@discava/common-shadcn",
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/common/shadcn/src",
   "projectType": "library",
@@ -43,7 +43,7 @@
       "dependsOn": [
         "format",
         {
-          "projects": ["@wattle/source"],
+          "projects": ["@discava/source"],
           "target": "license-check"
         }
       ],

@@ -19,44 +19,44 @@
     "strict": true,
     "target": "es2022",
     "customConditions": [
-      "@wattle/source"
+      "@discava/source"
     ],
     "rootDir": ".",
     "paths": {
-      "@wattle/core-table": [
+      "@discava/core-table": [
         "./packages/databases/core-table/src/index.ts"
       ],
-      "@wattle/common-scripts": [
+      "@discava/common-scripts": [
         "./packages/common/scripts/src/index.ts"
       ],
-      "@wattle/common-constructs": [
+      "@discava/common-constructs": [
         "./packages/common/constructs/src/index.ts"
       ],
-      "@wattle/core-api": [
+      "@discava/core-api": [
         "./packages/apis/core-api/src/index.ts"
       ],
-      "@wattle/student-portal": [
+      "@discava/student-portal": [
         "./packages/websites/student-portal/src/index.ts"
       ],
-      "@wattle/common-shadcn": [
+      "@discava/common-shadcn": [
         "./packages/common/shadcn/src/index.ts"
       ],
-      "@wattle/infra": [
+      "@discava/infra": [
         "./packages/infra/src/index.ts"
       ],
-      "@wattle/common-infra-config": [
+      "@discava/common-infra-config": [
         "./packages/common/infra-config/src/index.ts"
       ],
-      "@wattle/events": [
+      "@discava/events": [
         "./packages/events/src/index.ts"
       ],
-      "@wattle/instructor-portal": [
+      "@discava/instructor-portal": [
         "./packages/websites/instructor-portal/src/index.ts"
       ],
-      "@wattle/admin-portal": [
+      "@discava/admin-portal": [
         "./packages/websites/admin-portal/src/index.ts"
       ],
-      "@wattle/instructor-api": [
+      "@discava/instructor-api": [
         "./packages/apis/instructor-api/src/index.ts"
       ]
     }

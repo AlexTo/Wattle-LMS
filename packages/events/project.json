@@ -1,5 +1,5 @@
 {
-  "name": "@wattle/events",
+  "name": "@discava/events",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/events/src",
   "projectType": "library",
@@ -68,7 +68,7 @@
       "dependsOn": [
         "format",
         {
-          "projects": ["@wattle/source"],
+          "projects": ["@discava/source"],
           "target": "license-check"
         }
       ],

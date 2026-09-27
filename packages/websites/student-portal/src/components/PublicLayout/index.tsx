@@ -1,9 +1,10 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
+
+import { Button } from '@discava/common-shadcn/components/ui/button';
 import { Link } from '@tanstack/react-router';
-import { Button } from '@wattle/common-shadcn/components/ui/button';
 import type { ReactNode } from 'react';
 import { useAuth } from 'react-oidc-context';
 import Config from '../../config';
