@@ -922,6 +922,9 @@ attach_inline_policy() {
 attach_execution_policy() {
   EXECUTION_POLICY_FILE="$(mktemp -t "${EXECUTION_ROLE_NAME}.policy.XXXXXX.json")"
 
+  # SchedulesInScheduleGroups: deleting a schedule group first deletes every
+  # schedule left in it, which is authorized per schedule, not by the group.
+  #
   # MediaConvertTagOnCreate: tagging a job template as it's created (stack tags
   # propagate to it) is authorized against jobTemplates/*, not the template's
   # own ARN, so it can't be scoped to COMPACT_PREFIX like the other job
@@ -1186,6 +1189,12 @@ attach_execution_policy() {
       "Resource": [
         "arn:$AWS_PARTITION:scheduler:$AWS_REGION:$ACCOUNT_ID:schedule-group/$COMPACT_PREFIX*"
       ]
+    },
+    {
+      "Sid": "SchedulesInScheduleGroups",
+      "Effect": "Allow",
+      "Action": "scheduler:DeleteSchedule",
+      "Resource": "arn:$AWS_PARTITION:scheduler:$AWS_REGION:$ACCOUNT_ID:schedule/$COMPACT_PREFIX*/*"
     },
     {
       "Sid": "MediaConvertAccountLevel",
