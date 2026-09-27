@@ -225,6 +225,25 @@ describe('setup-stage.sh execution policy', { timeout: 60_000 }, () => {
       }),
     );
   });
+
+  it("allows deleting the schedules left in the stage's schedule groups", () => {
+    // Deleting a schedule group deletes its schedules first, each authorized
+    // on the schedule itself rather than the group.
+    const { status, executionPolicy } = runSetup({
+      kind: 'response',
+      useDefault: true,
+    });
+
+    expect(status).toBe(0);
+    expect(executionPolicy.Statement).toContainEqual(
+      expect.objectContaining({
+        Effect: 'Allow',
+        Action: 'scheduler:DeleteSchedule',
+        Resource:
+          'arn:aws:scheduler:ap-southeast-2:111122223333:schedule/discavadevelopment*/*',
+      }),
+    );
+  });
 });
 
 const CERTIFICATE_ARN =
