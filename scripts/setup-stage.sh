@@ -922,6 +922,11 @@ attach_inline_policy() {
 attach_execution_policy() {
   EXECUTION_POLICY_FILE="$(mktemp -t "${EXECUTION_ROLE_NAME}.policy.XXXXXX.json")"
 
+  # MediaConvertTagOnCreate: tagging a job template as it's created (stack tags
+  # propagate to it) is authorized against jobTemplates/*, not the template's
+  # own ARN, so it can't be scoped to COMPACT_PREFIX like the other job
+  # template actions.
+
   cat >"$EXECUTION_POLICY_FILE" <<EOF
 {
   "Version": "2012-10-17",
@@ -1190,6 +1195,12 @@ attach_execution_policy() {
         "mediaconvert:CreateJobTemplate"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "MediaConvertTagOnCreate",
+      "Effect": "Allow",
+      "Action": "mediaconvert:TagResource",
+      "Resource": "arn:$AWS_PARTITION:mediaconvert:$AWS_REGION:$ACCOUNT_ID:jobTemplates/*"
     },
     {
       "Sid": "MediaConvertJobTemplatesForDiscava",
