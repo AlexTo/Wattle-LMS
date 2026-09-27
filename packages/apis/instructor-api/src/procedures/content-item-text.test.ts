@@ -11,6 +11,7 @@ import {
 } from './content-item-text.js';
 
 const {
+  courseGet,
   courseInstructorGet,
   lessonGet,
   contentItemQueryPrimary,
@@ -19,6 +20,7 @@ const {
   contentItemPatch,
   contentItemPatchSet,
 } = vi.hoisted(() => ({
+  courseGet: vi.fn(),
   courseInstructorGet: vi.fn(),
   lessonGet: vi.fn(),
   contentItemQueryPrimary: vi.fn(),
@@ -31,6 +33,7 @@ const {
 vi.mock('@discava/core-table', () => ({
   createCoreTableService: vi.fn(async () => ({
     entities: {
+      course: { get: courseGet },
       courseInstructor: {
         get: courseInstructorGet,
       },
@@ -77,6 +80,7 @@ const lesson = {
   courseId: COURSE_ID,
   title: 'Welcome',
   order: 1,
+  visibility: 'visible' as const,
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
@@ -92,6 +96,8 @@ const contentItem = {
   s3Key: `courses/${COURSE_ID}/modules/${MODULE_ID}/lessons/${LESSON_ID}/content-items/${CONTENT_ITEM_ID}.mp4`,
   mimeType: 'video/mp4',
   order: 1,
+  visibility: 'visible' as const,
+  studentActivityCount: 0,
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
@@ -111,12 +117,18 @@ const textContentItem = {
   title: 'Welcome notes',
   body: textBody,
   order: 1,
+  visibility: 'visible' as const,
+  studentActivityCount: 0,
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+
+  courseGet.mockReturnValue({
+    go: vi.fn().mockResolvedValue({ data: { status: 'draft' } }),
+  });
 
   courseInstructorGet.mockReturnValue({
     go: vi.fn().mockResolvedValue({

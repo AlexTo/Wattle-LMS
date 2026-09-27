@@ -5,11 +5,15 @@
 import { TRPCError } from '@trpc/server';
 import { v7 as uuidv7 } from 'uuid';
 import { courseProcedure } from '../init.js';
+import { requireCourseInstructor } from '../lib/course-lifecycle.js';
 import {
   ArchiveCourseInputSchema,
   ArchiveCourseOutputSchema,
   CreateCourseInputSchema,
   CreateCourseOutputSchema,
+  type IViewCourseOutput,
+  ViewCourseInputSchema,
+  ViewCourseOutputSchema,
 } from '../schema/index.js';
 
 export const createCourse = courseProcedure
@@ -97,4 +101,59 @@ export const archiveCourse = courseProcedure
     );
 
     return course;
+  });
+
+// The course editor's view: the whole curriculum, including hidden and
+// archived modules, lessons and content items, for instructors teaching the
+// course. Students read the course through core-api's course.view, which
+// only returns what they may see.
+export const viewCourse = courseProcedure
+  .input(ViewCourseInputSchema)
+  .output(ViewCourseOutputSchema)
+  .query(async ({ ctx, input }) => {
+    const coreTable = ctx.coreTable!;
+    const { courseId } = input;
+
+    await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
+
+    // Course, its modules, their lessons, and each lesson's content items
+    // all share the `curriculum` collection's partition, so one query
+    // returns the whole curriculum.
+    const {
+      data: {
+        course: courses,
+        module: modules,
+        lesson: lessons,
+        contentItem: contentItems,
+      },
+    } = await coreTable.collections.curriculum({ courseId }).go();
+    const [course] = courses;
+    if (!course) {
+      throw new TRPCError({ code: 'NOT_FOUND' });
+    }
+
+    const byOrder = (a: { order: number }, b: { order: number }) =>
+      a.order - b.order;
+
+    // contentItem's ElectroDB-inferred type is flat rather than a union
+    // keyed on `type`; the cast bridges that gap to the discriminated-union
+    // output type, and the zod output schema validates the shape at runtime.
+    return {
+      ...course,
+      modules: modules
+        .slice()
+        .sort(byOrder)
+        .map((module) => ({
+          ...module,
+          lessons: lessons
+            .filter((lesson) => lesson.moduleId === module.moduleId)
+            .sort(byOrder)
+            .map((lesson) => ({
+              ...lesson,
+              contentItems: contentItems
+                .filter((item) => item.lessonId === lesson.lessonId)
+                .sort(byOrder),
+            })),
+        })),
+    } as IViewCourseOutput;
   });

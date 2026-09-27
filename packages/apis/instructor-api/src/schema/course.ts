@@ -3,6 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { z } from 'zod';
+import { ContentItemSchema } from './content-item.js';
+import { LessonSchema } from './lesson.js';
+import { ModuleSchema } from './module.js';
 
 export const CourseStatusSchema = z.enum(['draft', 'published', 'archived']);
 
@@ -37,3 +40,26 @@ export type IArchiveCourseInput = z.output<typeof ArchiveCourseInputSchema>;
 export const ArchiveCourseOutputSchema = CourseSchema;
 
 export type IArchiveCourseOutput = z.output<typeof ArchiveCourseOutputSchema>;
+
+export const ViewCourseInputSchema = z.object({
+  courseId: z.string(),
+});
+
+export type IViewCourseInput = z.output<typeof ViewCourseInputSchema>;
+
+// The instructor's view of a course: the whole curriculum, including hidden
+// and archived records (with their visibility/archivedAt), which the
+// student-facing core-api course.view filters out.
+export const ViewCourseOutputSchema = CourseSchema.extend({
+  modules: z.array(
+    ModuleSchema.extend({
+      lessons: z.array(
+        LessonSchema.extend({
+          contentItems: z.array(ContentItemSchema),
+        }),
+      ),
+    }),
+  ),
+});
+
+export type IViewCourseOutput = z.output<typeof ViewCourseOutputSchema>;

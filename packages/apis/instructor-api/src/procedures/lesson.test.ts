@@ -8,6 +8,7 @@ import { t } from '../init.js';
 import { createLesson, deleteLesson, updateLesson } from './lesson.js';
 
 const {
+  courseGet,
   courseInstructorGet,
   moduleGet,
   lessonQueryPrimary,
@@ -24,6 +25,7 @@ const {
   bestEffortDeleteContentItemVideos,
   bestEffortCancelTranscodeJobs,
 } = vi.hoisted(() => ({
+  courseGet: vi.fn(),
   courseInstructorGet: vi.fn(),
   moduleGet: vi.fn(),
   lessonQueryPrimary: vi.fn(),
@@ -44,6 +46,7 @@ const {
 vi.mock('@discava/core-table', () => ({
   createCoreTableService: vi.fn(async () => ({
     entities: {
+      course: { get: courseGet },
       courseInstructor: {
         get: courseInstructorGet,
       },
@@ -103,6 +106,7 @@ const module = {
   courseId: COURSE_ID,
   title: 'Introduction',
   order: 1,
+  visibility: 'visible' as const,
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
@@ -113,6 +117,7 @@ const lesson = {
   courseId: COURSE_ID,
   title: 'Welcome',
   order: 1,
+  visibility: 'visible' as const,
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
@@ -127,12 +132,18 @@ const contentItem = {
   s3Key: `lessons/${lesson.lessonId}/content-item-1.mp4`,
   mimeType: 'video/mp4',
   order: 1,
+  visibility: 'visible' as const,
+  studentActivityCount: 0,
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+
+  courseGet.mockReturnValue({
+    go: vi.fn().mockResolvedValue({ data: { status: 'draft' } }),
+  });
 
   courseInstructorGet.mockReturnValue({
     go: vi.fn().mockResolvedValue({

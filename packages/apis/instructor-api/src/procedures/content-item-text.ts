@@ -6,6 +6,11 @@ import { TRPCError } from '@trpc/server';
 import { v7 as uuidv7 } from 'uuid';
 import { courseProcedure } from '../init.js';
 import {
+  getCourseOrThrow,
+  initialVisibility,
+  requireNotArchived,
+} from '../lib/course-lifecycle.js';
+import {
   CreateContentItemTextInputSchema,
   CreateContentItemTextOutputSchema,
   type ICreateContentItemTextOutput,
@@ -38,6 +43,11 @@ export const createContentItemText = courseProcedure
     if (!lesson) {
       throw new TRPCError({ code: 'NOT_FOUND' });
     }
+    requireNotArchived(
+      lesson,
+      'Restore the lesson before adding content to it',
+    );
+    const course = await getCourseOrThrow(coreTable, courseId);
 
     // Text items have no upload step (unlike video, whose id is minted by
     // createContentItemVideoUploadUrl), so the id is generated here.
@@ -64,6 +74,7 @@ export const createContentItemText = courseProcedure
         description,
         body,
         order,
+        visibility: initialVisibility(course),
       })
       .go();
 

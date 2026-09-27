@@ -22,7 +22,6 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Alert } from '../../../../../components/alert';
 import { Spinner } from '../../../../../components/spinner';
-import { useCoreApi } from '../../../../../hooks/useCoreApi';
 import { useInstructorApi } from '../../../../../hooks/useInstructorApi';
 
 const ACCEPTED_VIDEO_TYPES = {
@@ -144,8 +143,7 @@ export function AttachLessonVideoDialog({
   const [uploadError, setUploadError] = useState<string>();
   const [uploadProgress, setUploadProgress] = useState<number>();
   const isUploading = uploadProgress !== undefined;
-  const { course } = useCoreApi();
-  const { contentItem } = useInstructorApi();
+  const { course, contentItem } = useInstructorApi();
   const queryClient = useQueryClient();
 
   const { mutateAsync: createUploadUrl } = useMutation(
@@ -446,16 +444,19 @@ export function RemoveLessonVideoButton({
   lessonId,
   contentItemId,
   title,
+  archive,
 }: {
   courseId: string;
   moduleId: string;
   lessonId: string;
   contentItemId: string;
   title: string;
+  // Outside a draft course, removing archives the video instead: students
+  // stop seeing it, but it and their data for it are kept and restorable.
+  archive: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const { course } = useCoreApi();
-  const { contentItem } = useInstructorApi();
+  const { course, contentItem } = useInstructorApi();
   const queryClient = useQueryClient();
   const {
     mutateAsync: removeContentItem,
@@ -488,14 +489,25 @@ export function RemoveLessonVideoButton({
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Remove video</DialogTitle>
+          <DialogTitle>
+            {archive ? 'Archive video' : 'Remove video'}
+          </DialogTitle>
           <p className="text-sm text-muted-foreground">
-            Are you sure you want to remove "{title}"? This can't be undone.
+            {archive
+              ? `Students will no longer see "${title}". Their progress is kept, and the video can be restored.`
+              : `Are you sure you want to remove "${title}"? This can't be undone.`}
           </p>
         </DialogHeader>
 
         {isError && (
-          <Alert type="error" header="Couldn't remove the video">
+          <Alert
+            type="error"
+            header={
+              archive
+                ? "Couldn't archive the video"
+                : "Couldn't remove the video"
+            }
+          >
             {error.message}
           </Alert>
         )}
@@ -510,7 +522,7 @@ export function RemoveLessonVideoButton({
           </Button>
           <Button
             type="button"
-            variant="destructive"
+            variant={archive ? 'default' : 'destructive'}
             disabled={isPending}
             onClick={async () => {
               try {
@@ -530,7 +542,13 @@ export function RemoveLessonVideoButton({
               });
             }}
           >
-            {isPending ? 'Removing...' : 'Remove video'}
+            {archive
+              ? isPending
+                ? 'Archiving...'
+                : 'Archive video'
+              : isPending
+                ? 'Removing...'
+                : 'Remove video'}
           </Button>
         </DialogFooter>
       </DialogContent>

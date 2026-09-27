@@ -2,19 +2,145 @@
  * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
+import type { Logger } from '@aws-lambda-powertools/logger';
 import { TRPCError } from '@trpc/server';
 import { v7 as uuidv7 } from 'uuid';
 import { courseProcedure } from '../init.js';
+import {
+  getCourseOrThrow,
+  initialVisibility,
+  isDraftCourse,
+  MAX_TRANSACTION_ITEMS,
+  requireCourseInstructor,
+  requireNotArchived,
+} from '../lib/course-lifecycle.js';
 import { bestEffortCancelTranscodeJobs } from '../lib/mediaconvert-client.js';
 import { bestEffortDeleteContentItemVideos } from '../lib/s3-client.js';
+import type { ICoreTableContext } from '../middleware/core-table.js';
 import {
   CreateModuleInputSchema,
   CreateModuleOutputSchema,
   DeleteModuleInputSchema,
   DeleteModuleOutputSchema,
+  DeleteModulePermanentlyInputSchema,
+  DeleteModulePermanentlyOutputSchema,
+  HideModuleInputSchema,
+  HideModuleOutputSchema,
+  PublishModuleInputSchema,
+  PublishModuleOutputSchema,
+  RestoreModuleInputSchema,
+  RestoreModuleOutputSchema,
   UpdateModuleInputSchema,
   UpdateModuleOutputSchema,
 } from '../schema/index.js';
+
+type CoreTable = NonNullable<ICoreTableContext['coreTable']>;
+
+const getModuleOrThrow = async (
+  coreTable: CoreTable,
+  courseId: string,
+  moduleId: string,
+) => {
+  const { data: module } = await coreTable.entities.module
+    .get({ courseId, moduleId })
+    .go();
+  if (!module) {
+    throw new TRPCError({ code: 'NOT_FOUND' });
+  }
+  return module;
+};
+
+// Content items share the same sk prefix as their parent lesson (moduleId,
+// then lessonId, then contentItemId), so querying by just courseId+moduleId
+// returns every content item across every lesson in the module in one call.
+const queryModuleDescendants = async (
+  coreTable: CoreTable,
+  courseId: string,
+  moduleId: string,
+) => {
+  const { data: lessons } = await coreTable.entities.lesson.query
+    .primary({ courseId, moduleId })
+    .go();
+  const { data: contentItems } = await coreTable.entities.contentItem.query
+    .primary({ courseId, moduleId })
+    .go();
+  return { lessons, contentItems };
+};
+
+// Lessons -- and their content items -- have no lifecycle independent of
+// their module, and there's no way to reach one once its module is gone, so
+// deleting a module cascades to every lesson and content item under it.
+// Everything is deleted transactionally so a failure partway through can't
+// leave an orphaned lesson or content item referencing a module that no
+// longer exists.
+const hardDeleteModule = async (
+  coreTable: CoreTable,
+  logger: Logger | undefined,
+  courseId: string,
+  moduleId: string,
+  { lessons, contentItems }: Awaited<ReturnType<typeof queryModuleDescendants>>,
+) => {
+  // Nothing currently limits how many lessons/content items a module can
+  // hold, so a module this large can't be deleted in one transactional
+  // cascade.
+  if (1 + lessons.length + contentItems.length > MAX_TRANSACTION_ITEMS) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message:
+        'Module has too many lessons or content items to delete in a single operation; delete some first',
+    });
+  }
+
+  // Content item deletes are conditioned on updatedAt (bumped by every
+  // write, video or text -- see the contentItem entity's `watch: '*'` on
+  // that attribute) still matching what was just queried above -- see the
+  // equivalent comment in lesson.ts's hardDeleteLesson for why: a content
+  // item changing between the query and this transaction, most notably a
+  // transcode completing and publishing its HLS output or a student's first
+  // activity bumping studentActivityCount, would otherwise still be deleted
+  // while cleanup below acted on a stale snapshot of it.
+  const { canceled, data: transactionResults } = await coreTable.transaction
+    .write((entities) => [
+      entities.module.delete({ courseId, moduleId }).commit(),
+      ...lessons.map(({ lessonId }) =>
+        entities.lesson.delete({ courseId, moduleId, lessonId }).commit(),
+      ),
+      ...contentItems.map((item) =>
+        entities.contentItem
+          .delete({
+            courseId,
+            moduleId,
+            lessonId: item.lessonId,
+            contentItemId: item.contentItemId,
+          })
+          .where((attr, op) => op.eq(attr.updatedAt, item.updatedAt))
+          .commit(),
+      ),
+    ])
+    .go();
+
+  if (canceled) {
+    const staleContentItem = transactionResults?.some(
+      (result) => result?.code === 'ConditionalCheckFailed',
+    );
+    throw new TRPCError({
+      code: staleContentItem ? 'CONFLICT' : 'INTERNAL_SERVER_ERROR',
+      message: staleContentItem
+        ? 'A content item in this module changed while it was being deleted; retry the delete'
+        : 'Failed to delete module',
+    });
+  }
+
+  // Best-effort: the DynamoDB records are the source of truth for the
+  // module's content, so a failure to remove the underlying S3 objects is
+  // logged rather than thrown. Only video content items have an S3 object
+  // to clean up (and possibly a still-running transcode job).
+  const videoContentItems = contentItems.filter(
+    (item) => item.type === 'video',
+  );
+  await bestEffortCancelTranscodeJobs(logger, videoContentItems);
+  await bestEffortDeleteContentItemVideos(logger, videoContentItems);
+};
 
 export const createModule = courseProcedure
   .input(CreateModuleInputSchema)
@@ -22,16 +148,9 @@ export const createModule = courseProcedure
   .mutation(async ({ ctx, input }) => {
     const coreTable = ctx.coreTable!;
     const { courseId, title, description } = input;
-    const { sub: currentUser } = ctx.user;
 
-    // Only instructors teaching this specific course may add modules to it,
-    // not just any member of the instructor group.
-    const { data: membership } = await coreTable.entities.courseInstructor
-      .get({ courseId, instructorId: currentUser })
-      .go();
-    if (!membership) {
-      throw new TRPCError({ code: 'FORBIDDEN' });
-    }
+    await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
+    const course = await getCourseOrThrow(coreTable, courseId);
 
     // New modules append to the end of the course. `order` isn't part of any
     // key (module counts per course are small enough to sort client-side),
@@ -43,7 +162,14 @@ export const createModule = courseProcedure
       modules.reduce((max, module) => Math.max(max, module.order), 0) + 1;
 
     const { data: module } = await coreTable.entities.module
-      .create({ moduleId: uuidv7(), courseId, title, description, order })
+      .create({
+        moduleId: uuidv7(),
+        courseId,
+        title,
+        description,
+        order,
+        visibility: initialVisibility(course),
+      })
       .go();
 
     return module;
@@ -55,23 +181,9 @@ export const updateModule = courseProcedure
   .mutation(async ({ ctx, input }) => {
     const coreTable = ctx.coreTable!;
     const { courseId, moduleId, title, description, order } = input;
-    const { sub: currentUser } = ctx.user;
 
-    // Only instructors teaching this specific course may edit its modules,
-    // not just any member of the instructor group.
-    const { data: membership } = await coreTable.entities.courseInstructor
-      .get({ courseId, instructorId: currentUser })
-      .go();
-    if (!membership) {
-      throw new TRPCError({ code: 'FORBIDDEN' });
-    }
-
-    const { data: existing } = await coreTable.entities.module
-      .get({ courseId, moduleId })
-      .go();
-    if (!existing) {
-      throw new TRPCError({ code: 'NOT_FOUND' });
-    }
+    await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
+    await getModuleOrThrow(coreTable, courseId, moduleId);
 
     const { data: module } = await coreTable.entities.module
       .patch({ courseId, moduleId })
@@ -85,109 +197,233 @@ export const updateModule = courseProcedure
     return module;
   });
 
+// In a draft course this is a permanent, cascading delete. In any other
+// course it archives the module instead, keeping it and everything under it
+// (and every student's data for it) restorable; see deleteModulePermanently
+// for removing an archived module for good.
 export const deleteModule = courseProcedure
   .input(DeleteModuleInputSchema)
   .output(DeleteModuleOutputSchema)
   .mutation(async ({ ctx, input }) => {
     const coreTable = ctx.coreTable!;
     const { courseId, moduleId } = input;
-    const { sub: currentUser } = ctx.user;
 
-    // Only instructors teaching this specific course may delete its
-    // modules, not just any member of the instructor group.
-    const { data: membership } = await coreTable.entities.courseInstructor
-      .get({ courseId, instructorId: currentUser })
-      .go();
-    if (!membership) {
-      throw new TRPCError({ code: 'FORBIDDEN' });
+    await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
+    const existing = await getModuleOrThrow(coreTable, courseId, moduleId);
+    const course = await getCourseOrThrow(coreTable, courseId);
+
+    if (isDraftCourse(course)) {
+      await hardDeleteModule(
+        coreTable,
+        ctx.logger,
+        courseId,
+        moduleId,
+        await queryModuleDescendants(coreTable, courseId, moduleId),
+      );
+      // DynamoDB transactions don't return the deleted attributes, but we
+      // already fetched the module's pre-delete state above for the
+      // existence check.
+      return existing;
     }
 
-    const { data: existing } = await coreTable.entities.module
-      .get({ courseId, moduleId })
-      .go();
-    if (!existing) {
-      throw new TRPCError({ code: 'NOT_FOUND' });
+    // Already archived: archiving again is a no-op, so a retried request
+    // doesn't move archivedAt.
+    if (existing.archivedAt) {
+      return existing;
     }
 
-    // Lessons -- and their content items -- have no lifecycle independent
-    // of their module, and there's no way to reach one once its module is
-    // gone, so deleting a module cascades to every lesson and content item
-    // under it. Content items share the same sk prefix as their parent
-    // lesson (moduleId, then lessonId, then contentItemId), so querying by
-    // just courseId+moduleId returns every content item across every
-    // lesson in the module in one call. Everything is deleted
-    // transactionally so a failure partway through can't leave an orphaned
-    // lesson or content item referencing a module that no longer exists.
-    const { data: lessons } = await coreTable.entities.lesson.query
-      .primary({ courseId, moduleId })
-      .go();
-    const { data: contentItems } = await coreTable.entities.contentItem.query
-      .primary({ courseId, moduleId })
-      .go();
+    // Only the module itself is marked archived. Its lessons and content
+    // items are hidden from students because their ancestor is archived,
+    // which keeps this a single write regardless of the module's size and
+    // lets a restore bring back exactly what was there.
+    const { data: module } = await coreTable.entities.module
+      .patch({ courseId, moduleId })
+      .set({ archivedAt: new Date().toISOString() })
+      .go({ response: 'all_new' });
 
-    // DynamoDB caps a single transaction at 100 items; nothing currently
-    // limits how many lessons/content items a module can hold, so a module
-    // this large can't be deleted in one transactional cascade.
-    if (1 + lessons.length + contentItems.length > 100) {
+    return module;
+  });
+
+// Publishes the module along with every hidden lesson and content item under
+// it in one transaction, so students see a newly built module complete
+// rather than piece by piece. Archived descendants, and content items under
+// an archived lesson, are left as they are.
+export const publishModule = courseProcedure
+  .input(PublishModuleInputSchema)
+  .output(PublishModuleOutputSchema)
+  .mutation(async ({ ctx, input }) => {
+    const coreTable = ctx.coreTable!;
+    const { courseId, moduleId } = input;
+
+    await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
+    const existing = await getModuleOrThrow(coreTable, courseId, moduleId);
+    requireNotArchived(existing, 'Restore the module before publishing it');
+
+    const { lessons, contentItems } = await queryModuleDescendants(
+      coreTable,
+      courseId,
+      moduleId,
+    );
+    const archivedLessonIds = new Set(
+      lessons
+        .filter((lesson) => lesson.archivedAt)
+        .map(({ lessonId }) => lessonId),
+    );
+    const lessonsToPublish = lessons.filter(
+      (lesson) => lesson.visibility === 'hidden' && !lesson.archivedAt,
+    );
+    const contentItemsToPublish = contentItems.filter(
+      (item) =>
+        item.visibility === 'hidden' &&
+        !item.archivedAt &&
+        !archivedLessonIds.has(item.lessonId),
+    );
+    const publishModuleItself = existing.visibility === 'hidden';
+
+    const writeCount =
+      (publishModuleItself ? 1 : 0) +
+      lessonsToPublish.length +
+      contentItemsToPublish.length;
+    if (writeCount === 0) {
+      return existing;
+    }
+    if (writeCount > MAX_TRANSACTION_ITEMS) {
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
         message:
-          'Module has too many lessons or content items to delete in a single operation; delete some first',
+          'Module has too many hidden lessons or content items to publish in a single operation; publish some lessons first',
       });
     }
 
-    // Content item deletes are conditioned on updatedAt (bumped by every
-    // write, video or text -- see the contentItem entity's `watch: '*'`
-    // on that attribute) still matching what was just queried above --
-    // see the equivalent comment in lesson.ts's deleteLesson for why:
-    // a content item changing between the query and this transaction,
-    // most notably a transcode completing and publishing its HLS output,
-    // would otherwise still be deleted while cleanup below acted on a
-    // stale snapshot of it.
-    const { canceled, data: transactionResults } = await coreTable.transaction
+    const { canceled } = await coreTable.transaction
       .write((entities) => [
-        entities.module.delete({ courseId, moduleId }).commit(),
-        ...lessons.map(({ lessonId }) =>
-          entities.lesson.delete({ courseId, moduleId, lessonId }).commit(),
+        ...(publishModuleItself
+          ? [
+              entities.module
+                .patch({ courseId, moduleId })
+                .set({ visibility: 'visible' })
+                .commit(),
+            ]
+          : []),
+        ...lessonsToPublish.map(({ lessonId }) =>
+          entities.lesson
+            .patch({ courseId, moduleId, lessonId })
+            .set({ visibility: 'visible' })
+            .commit(),
         ),
-        ...contentItems.map((item) =>
+        ...contentItemsToPublish.map(({ lessonId, contentItemId }) =>
           entities.contentItem
-            .delete({
-              courseId,
-              moduleId,
-              lessonId: item.lessonId,
-              contentItemId: item.contentItemId,
-            })
-            .where((attr, op) => op.eq(attr.updatedAt, item.updatedAt))
+            .patch({ courseId, moduleId, lessonId, contentItemId })
+            .set({ visibility: 'visible' })
             .commit(),
         ),
       ])
       .go();
-
     if (canceled) {
-      const staleContentItem = transactionResults?.some(
-        (result) => result?.code === 'ConditionalCheckFailed',
-      );
+      // Most likely a lesson or content item deleted between the query and
+      // the transaction (patch requires the record to exist).
       throw new TRPCError({
-        code: staleContentItem ? 'CONFLICT' : 'INTERNAL_SERVER_ERROR',
-        message: staleContentItem
-          ? 'A content item in this module changed while it was being deleted; retry the delete'
-          : 'Failed to delete module',
+        code: 'CONFLICT',
+        message: 'The module changed while it was being published; retry',
       });
     }
 
-    // Best-effort: the DynamoDB records are the source of truth for the
-    // module's content, so a failure to remove the underlying S3 objects
-    // is logged rather than thrown. Only video content items have an S3
-    // object to clean up (and possibly a still-running transcode job).
-    const videoContentItems = contentItems.filter(
-      (item) => item.type === 'video',
-    );
-    await bestEffortCancelTranscodeJobs(ctx.logger, videoContentItems);
-    await bestEffortDeleteContentItemVideos(ctx.logger, videoContentItems);
+    // Transactions don't return the written attributes.
+    return getModuleOrThrow(coreTable, courseId, moduleId);
+  });
 
-    // DynamoDB transactions don't return the deleted attributes, but we
-    // already fetched the module's pre-delete state above for the
-    // existence check.
+// Hides only the module itself; its lessons and content items keep their own
+// visibility, so publishing the module again shows them as they were.
+export const hideModule = courseProcedure
+  .input(HideModuleInputSchema)
+  .output(HideModuleOutputSchema)
+  .mutation(async ({ ctx, input }) => {
+    const coreTable = ctx.coreTable!;
+    const { courseId, moduleId } = input;
+
+    await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
+    const existing = await getModuleOrThrow(coreTable, courseId, moduleId);
+    requireNotArchived(existing, 'Restore the module before hiding it');
+    if (existing.visibility === 'hidden') {
+      return existing;
+    }
+
+    const { data: module } = await coreTable.entities.module
+      .patch({ courseId, moduleId })
+      .set({ visibility: 'hidden' })
+      .go({ response: 'all_new' });
+
+    return module;
+  });
+
+export const restoreModule = courseProcedure
+  .input(RestoreModuleInputSchema)
+  .output(RestoreModuleOutputSchema)
+  .mutation(async ({ ctx, input }) => {
+    const coreTable = ctx.coreTable!;
+    const { courseId, moduleId } = input;
+
+    await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
+    const existing = await getModuleOrThrow(coreTable, courseId, moduleId);
+    if (!existing.archivedAt) {
+      return existing;
+    }
+
+    // `order` was never touched by archiving, so the module returns to its
+    // original position.
+    const { data: module } = await coreTable.entities.module
+      .patch({ courseId, moduleId })
+      .remove(['archivedAt'])
+      .go({ response: 'all_new' });
+
+    return module;
+  });
+
+// Removes an archived module and everything under it for good. Refused while
+// any content item in it has student activity: that data must survive
+// curriculum edits, so such a module can stay archived but never be deleted.
+export const deleteModulePermanently = courseProcedure
+  .input(DeleteModulePermanentlyInputSchema)
+  .output(DeleteModulePermanentlyOutputSchema)
+  .mutation(async ({ ctx, input }) => {
+    const coreTable = ctx.coreTable!;
+    const { courseId, moduleId } = input;
+
+    await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
+    const existing = await getModuleOrThrow(coreTable, courseId, moduleId);
+    if (!existing.archivedAt) {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'Archive the module before deleting it permanently',
+      });
+    }
+
+    const descendants = await queryModuleDescendants(
+      coreTable,
+      courseId,
+      moduleId,
+    );
+    if (
+      descendants.contentItems.some((item) => item.studentActivityCount > 0)
+    ) {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message:
+          'Students have activity in this module, so it can stay archived but cannot be deleted permanently',
+      });
+    }
+
+    // hardDeleteModule conditions each content item delete on the updatedAt
+    // in this same snapshot, so a student's first activity landing after the
+    // check above (which bumps updatedAt) cancels the delete rather than
+    // destroying that data.
+    await hardDeleteModule(
+      coreTable,
+      ctx.logger,
+      courseId,
+      moduleId,
+      descendants,
+    );
+
     return existing;
   });

@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { z } from 'zod';
+import { CurriculumVisibilitySchema } from './visibility.js';
 
 export const ModuleSchema = z.object({
   moduleId: z.string(),
@@ -10,6 +11,8 @@ export const ModuleSchema = z.object({
   title: z.string(),
   description: z.string().optional(),
   order: z.number(),
+  visibility: CurriculumVisibilitySchema,
+  archivedAt: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -52,3 +55,44 @@ export type IDeleteModuleInput = z.output<typeof DeleteModuleInputSchema>;
 export const DeleteModuleOutputSchema = ModuleSchema;
 
 export type IDeleteModuleOutput = z.output<typeof DeleteModuleOutputSchema>;
+
+const ModuleKeySchema = z.object({
+  courseId: z.string(),
+  moduleId: z.string(),
+});
+
+export const PublishModuleInputSchema = ModuleKeySchema;
+
+export type IPublishModuleInput = z.output<typeof PublishModuleInputSchema>;
+
+export const PublishModuleOutputSchema = ModuleSchema;
+
+export type IPublishModuleOutput = z.output<typeof PublishModuleOutputSchema>;
+
+export const HideModuleInputSchema = ModuleKeySchema;
+
+export type IHideModuleInput = z.output<typeof HideModuleInputSchema>;
+
+export const HideModuleOutputSchema = ModuleSchema;
+
+export type IHideModuleOutput = z.output<typeof HideModuleOutputSchema>;
+
+export const RestoreModuleInputSchema = ModuleKeySchema;
+
+export type IRestoreModuleInput = z.output<typeof RestoreModuleInputSchema>;
+
+export const RestoreModuleOutputSchema = ModuleSchema;
+
+export type IRestoreModuleOutput = z.output<typeof RestoreModuleOutputSchema>;
+
+export const DeleteModulePermanentlyInputSchema = ModuleKeySchema;
+
+export type IDeleteModulePermanentlyInput = z.output<
+  typeof DeleteModulePermanentlyInputSchema
+>;
+
+export const DeleteModulePermanentlyOutputSchema = ModuleSchema;
+
+export type IDeleteModulePermanentlyOutput = z.output<
+  typeof DeleteModulePermanentlyOutputSchema
+>;

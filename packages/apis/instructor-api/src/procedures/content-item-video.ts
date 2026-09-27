@@ -14,6 +14,11 @@ import {
   getSignedCloudFrontCookies,
 } from '../lib/cloudfront-client.js';
 import {
+  getCourseOrThrow,
+  initialVisibility,
+  requireNotArchived,
+} from '../lib/course-lifecycle.js';
+import {
   bestEffortCancelTranscodeJob,
   bestEffortCancelTranscodeJobs,
   submitTranscodeJob,
@@ -173,6 +178,11 @@ export const createContentItemVideo = courseProcedure
     if (!lesson) {
       throw new TRPCError({ code: 'NOT_FOUND' });
     }
+    requireNotArchived(
+      lesson,
+      'Restore the lesson before adding content to it',
+    );
+    const course = await getCourseOrThrow(coreTable, courseId);
 
     // The object key must be one this lesson's own upload-url procedure
     // could have issued, so a caller can't record metadata pointing at an
@@ -229,6 +239,7 @@ export const createContentItemVideo = courseProcedure
         mimeType,
         durationSeconds,
         order,
+        visibility: initialVisibility(course),
         submissionNonce,
       })
       .go();

@@ -2,6 +2,7 @@
  * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
+import { filterEffectivelyVisible } from '@discava/core-table';
 import { TRPCError } from '@trpc/server';
 import { courseProcedure, publicCourseProcedure } from '../init.js';
 import {
@@ -98,15 +99,20 @@ export const publicViewCourse = publicCourseProcedure
   .query(async ({ ctx, input }) => {
     const coreTable = ctx.coreTable!;
 
-    const {
-      data: { course: courses, module: modules, lesson: lessons },
-    } = await coreTable.collections
+    const { data } = await coreTable.collections
       .curriculum({ courseId: input.courseId })
       .go();
-    const [course] = courses;
+    const [course] = data.course;
     if (!course || course.status !== 'published') {
       throw new TRPCError({ code: 'NOT_FOUND' });
     }
+    // Only what a student may see, so a hidden or archived module or lesson
+    // isn't leaked to anonymous callers either.
+    const { modules, lessons } = filterEffectivelyVisible({
+      modules: data.module,
+      lessons: data.lesson,
+      contentItems: [],
+    });
 
     const lessonsByModuleId = new Map<string, typeof lessons>();
     for (const lesson of lessons) {
@@ -139,20 +145,21 @@ export const viewCourse = courseProcedure
     // all share the `curriculum` collection's partition (see
     // @discava/core-table's service.ts), so one query returns the whole
     // curriculum instead of a get plus per-module/per-lesson queries.
-    const {
-      data: {
-        course: courses,
-        module: modules,
-        lesson: lessons,
-        contentItem: contentItems,
-      },
-    } = await coreTable.collections
+    const { data } = await coreTable.collections
       .curriculum({ courseId: input.courseId })
       .go();
-    const [course] = courses;
+    const [course] = data.course;
     if (!course) {
       throw new TRPCError({ code: 'NOT_FOUND' });
     }
+    // Students only see a module, lesson or content item that is visible, not
+    // archived, and not under a hidden or archived ancestor. Instructors edit
+    // the full curriculum through instructor-api's course.view instead.
+    const { modules, lessons, contentItems } = filterEffectivelyVisible({
+      modules: data.module,
+      lessons: data.lesson,
+      contentItems: data.contentItem,
+    });
 
     const contentItemsByLessonId = new Map<string, typeof contentItems>();
     for (const contentItem of contentItems) {

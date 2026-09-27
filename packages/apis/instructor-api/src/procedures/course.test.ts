@@ -5,7 +5,7 @@
 import type { APIGatewayProxyEvent } from 'aws-lambda';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../init.js';
-import { archiveCourse, createCourse } from './course.js';
+import { archiveCourse, createCourse, viewCourse } from './course.js';
 
 const {
   courseCreate,
@@ -19,6 +19,7 @@ const {
   courseInstructorPatchSet,
   transactionWrite,
   transactionGo,
+  curriculumCollection,
 } = vi.hoisted(() => ({
   courseCreate: vi.fn(),
   courseGet: vi.fn(),
@@ -31,6 +32,7 @@ const {
   courseInstructorPatchSet: vi.fn(),
   transactionWrite: vi.fn(),
   transactionGo: vi.fn(),
+  curriculumCollection: vi.fn(),
 }));
 
 vi.mock('@discava/core-table', () => ({
@@ -53,10 +55,13 @@ vi.mock('@discava/core-table', () => ({
     transaction: {
       write: transactionWrite,
     },
+    collections: {
+      curriculum: curriculumCollection,
+    },
   })),
 }));
 
-const router = t.router({ createCourse, archiveCourse });
+const router = t.router({ createCourse, archiveCourse, viewCourse });
 const caller = t.createCallerFactory(router);
 
 const INSTRUCTOR_SUB = 'instructor-1';
@@ -245,5 +250,112 @@ describe('archiveCourse', () => {
       courseUpdatedAt: course.updatedAt,
     });
     expect(courseInstructorPatchSet).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('viewCourse', () => {
+  const timestamps = {
+    createdAt: '2024-01-01T00:00:00.000Z',
+    updatedAt: '2024-01-01T00:00:00.000Z',
+  };
+  const module = {
+    moduleId: 'module-1',
+    courseId: course.courseId,
+    title: 'Introduction',
+    order: 1,
+    visibility: 'hidden' as const,
+    ...timestamps,
+  };
+  const lesson = {
+    lessonId: 'lesson-1',
+    moduleId: 'module-1',
+    courseId: course.courseId,
+    title: 'Welcome',
+    order: 1,
+    visibility: 'visible' as const,
+    archivedAt: '2024-02-01T00:00:00.000Z',
+    ...timestamps,
+  };
+  const contentItem = (contentItemId: string, order: number) => ({
+    contentItemId,
+    lessonId: 'lesson-1',
+    moduleId: 'module-1',
+    courseId: course.courseId,
+    type: 'text' as const,
+    status: 'ready' as const,
+    title: contentItemId,
+    body: '{}',
+    order,
+    visibility: 'hidden' as const,
+    studentActivityCount: 2,
+    ...timestamps,
+  });
+
+  it('throws FORBIDDEN when the caller does not teach the course', async () => {
+    courseInstructorGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({ data: undefined }),
+    });
+
+    await expect(
+      callAs().viewCourse({ courseId: course.courseId }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(curriculumCollection).not.toHaveBeenCalled();
+  });
+
+  // The course editor needs everything, including what students can't see,
+  // along with the state that decides it.
+  it('returns the whole curriculum, including hidden and archived records, sorted by order', async () => {
+    courseInstructorGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: { courseId: course.courseId, instructorId: INSTRUCTOR_SUB },
+      }),
+    });
+    curriculumCollection.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: {
+          course: [course],
+          module: [module],
+          lesson: [lesson],
+          contentItem: [contentItem('item-2', 2), contentItem('item-1', 1)],
+        },
+      }),
+    });
+
+    const result = await callAs().viewCourse({ courseId: course.courseId });
+
+    expect(result).toEqual({
+      ...course,
+      modules: [
+        {
+          ...module,
+          lessons: [
+            {
+              ...lesson,
+              contentItems: [
+                contentItem('item-1', 1),
+                contentItem('item-2', 2),
+              ],
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('throws NOT_FOUND when the course does not exist', async () => {
+    courseInstructorGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: { courseId: 'missing', instructorId: INSTRUCTOR_SUB },
+      }),
+    });
+    curriculumCollection.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: { course: [], module: [], lesson: [], contentItem: [] },
+      }),
+    });
+
+    await expect(
+      callAs().viewCourse({ courseId: 'missing' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 });
