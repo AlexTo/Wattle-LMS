@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import { Entity } from 'electrodb';
@@ -29,7 +29,7 @@ export const createCourseInstructorEntity = async () =>
         // Denormalized from Course.updatedAt so byInstructor can list an
         // instructor's courses sorted by recency without an extra fetch per
         // page. Kept in sync by every procedure that writes Course - see
-        // createCourse/archiveCourse in @wattle/instructor-api.
+        // createCourse/archiveCourse in @discava/instructor-api.
         courseUpdatedAt: {
           type: 'string',
           required: true,

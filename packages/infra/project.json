@@ -1,5 +1,5 @@
 {
-  "name": "@wattle/infra",
+  "name": "@discava/infra",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/infra/src",
   "projectType": "application",
@@ -65,7 +65,7 @@
       "executor": "nx:run-commands",
       "dependsOn": ["^assemble", "compile"],
       "options": {
-        "command": "tsx packages/common/scripts/src/infra/infra-deploy.ts packages/infra \"wattle-infra-sandbox/**\" --express"
+        "command": "tsx packages/common/scripts/src/infra/infra-deploy.ts packages/infra \"discava-infra-sandbox/**\" --express"
       }
     },
     "destroy": {
@@ -103,7 +103,7 @@
       "dependsOn": [
         "format",
         {
-          "projects": ["@wattle/source"],
+          "projects": ["@discava/source"],
           "target": "license-check"
         }
       ],
@@ -127,7 +127,7 @@
       "inputs": [
         "default",
         {
-          "runtime": "env | grep -E '^WATTLE_(DEVELOPMENT|PRODUCTION)_' | sort"
+          "runtime": "env | grep -E '^DISCAVA_(DEVELOPMENT|PRODUCTION)_' | sort"
         }
       ],
       "outputs": ["{workspaceRoot}/dist/{projectRoot}/cdk.out"],

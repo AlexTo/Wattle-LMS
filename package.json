@@ -1,5 +1,5 @@
 {
-  "name": "@wattle/source",
+  "name": "@discava/source",
   "version": "0.0.0",
   "license": "Apache-2.0",
   "packageManager": "pnpm@11.25.0",

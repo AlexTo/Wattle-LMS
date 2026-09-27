@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import tailwindcss from '@tailwindcss/vite';
@@ -42,7 +42,7 @@ export default defineConfig(() => ({
   },
   test: {
     passWithNoTests: true,
-    name: '@wattle/admin-portal',
+    name: '@discava/admin-portal',
     watch: false,
     globals: true,
     environment: 'jsdom',

@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import { Stage, StageProps } from 'aws-cdk-lib';
@@ -42,7 +42,7 @@ export class ApplicationStage extends Stage {
   ) {
     super(scope, id, props);
 
-    new ApplicationStack(this, 'CoreStack', {
+    new ApplicationStack(this, 'Application', {
       crossRegionReferences: true,
       identity,
       coreApi,

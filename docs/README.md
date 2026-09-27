@@ -1,4 +1,4 @@
-# @wattle/docs
+# @discava/docs
 
 Documentation site generated with [@aws/nx-plugin](https://github.com/awslabs/nx-plugin-for-aws/),
 powered by [Astro](https://astro.build/) and [Starlight](https://starlight.astro.build/).
@@ -6,19 +6,19 @@ powered by [Astro](https://astro.build/) and [Starlight](https://starlight.astro
 ## Run locally
 
 ```bash
-pnpm nx start @wattle/docs
+pnpm nx start @discava/docs
 ```
 
 ## Build for production
 
 ```bash
-pnpm nx build @wattle/docs
+pnpm nx build @discava/docs
 ```
 
 ## Preview the production build
 
 ```bash
-pnpm nx preview @wattle/docs
+pnpm nx preview @discava/docs
 ```
 
 ## Translate documentation
@@ -42,14 +42,14 @@ Make sure each locale you list is also configured in `astro.config.mjs` under
 Run the translator manually with:
 
 ```bash
-pnpm nx translate @wattle/docs -- --all
+pnpm nx translate @discava/docs -- --all
 ```
 
 Translate only the files that changed since the last `docs: update translations`
 commit:
 
 ```bash
-pnpm nx translate @wattle/docs
+pnpm nx translate @discava/docs
 ```
 
 Other options in `scripts/translate.config.json`:

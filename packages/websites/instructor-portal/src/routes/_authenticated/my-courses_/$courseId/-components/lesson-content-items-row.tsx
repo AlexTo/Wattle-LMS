@@ -1,8 +1,8 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { Button } from '@wattle/common-shadcn/components/ui/button';
+import { Button } from '@discava/common-shadcn/components/ui/button';
 import { FileText, PencilLine, Video } from 'lucide-react';
 import {
   AttachLessonVideoDialog,

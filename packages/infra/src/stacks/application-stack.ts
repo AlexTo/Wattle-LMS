@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import {
@@ -18,7 +18,7 @@ import {
   suppressRules,
   UserIdentity,
   VideoTranscodePipeline,
-} from '@wattle/common-constructs';
+} from '@discava/common-constructs';
 import type {
   AdminPortalComponentConfig,
   CoreApiComponentConfig,
@@ -28,7 +28,7 @@ import type {
   InstructorPortalComponentConfig,
   LessonMediaComponentConfig,
   StudentPortalComponentConfig,
-} from '@wattle/common-infra-config';
+} from '@discava/common-infra-config';
 import { CfnResource, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
 import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { Mfa, UserPoolOperation } from 'aws-cdk-lib/aws-cognito';
@@ -550,7 +550,7 @@ export class ApplicationStack extends Stack {
     );
     // The upload bucket's name is resolved at runtime via RuntimeConfig/
     // AppConfig, granted below alongside the DynamoDB table name lookup
-    // @wattle/core-table already needs.
+    // @discava/core-table already needs.
     const runtimeConfig = RuntimeConfig.ensure(this);
     transcodeComplete.addEnvironment(
       'RUNTIME_CONFIG_APP_ID',

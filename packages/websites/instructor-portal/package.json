@@ -1,5 +1,5 @@
 {
-  "name": "@wattle/instructor-portal",
+  "name": "@discava/instructor-portal",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -13,8 +13,8 @@
     "@tiptap/starter-kit": "catalog:",
     "@trpc/client": "catalog:",
     "@trpc/tanstack-react-query": "catalog:",
-    "@wattle/common-shadcn": "workspace:*",
-    "@wattle/instructor-api": "workspace:*",
+    "@discava/common-shadcn": "workspace:*",
+    "@discava/instructor-api": "workspace:*",
     "event-source-polyfill": "catalog:",
     "hls.js": "catalog:",
     "lucide-react": "catalog:",
@@ -26,7 +26,7 @@
     "recharts": "catalog:",
     "tailwindcss": "catalog:",
     "zod": "catalog:",
-    "@wattle/core-api": "workspace:*"
+    "@discava/core-api": "workspace:*"
   },
   "devDependencies": {
     "@smithy/types": "catalog:",

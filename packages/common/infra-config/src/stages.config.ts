@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import type { StagesConfig } from './stages.types.js';
@@ -8,18 +8,18 @@ import type { StagesConfig } from './stages.types.js';
 // aren't committed here. Set them as <STAGE>_<COMPONENT>_<FIELD> env vars
 // instead (see env-overrides.ts); deploy.yml forwards any such variable set
 // on the stage's GitHub environment, and scripts/setup-stage.sh prompts for
-// them and sets them there. For wattle-development, each component
-// takes a WATTLE_DEVELOPMENT_<COMPONENT>_CERTIFICATE_ARN plus:
+// them and sets them there. For discava-development, each component
+// takes a DISCAVA_DEVELOPMENT_<COMPONENT>_CERTIFICATE_ARN plus:
 //
 //   APIs (API Gateway; certificate in the stage's region), one domain each:
-//     WATTLE_DEVELOPMENT_CORE_API_DOMAIN_NAME            api.example.com
-//     WATTLE_DEVELOPMENT_INSTRUCTOR_API_DOMAIN_NAME      instructor-api.example.com
+//     DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME            api.example.com
+//     DISCAVA_DEVELOPMENT_INSTRUCTOR_API_DOMAIN_NAME      instructor-api.example.com
 //
 //   CloudFront (certificate in us-east-1), comma-separated domains:
-//     WATTLE_DEVELOPMENT_STUDENT_PORTAL_DOMAIN_NAMES     example.com,www.example.com
-//     WATTLE_DEVELOPMENT_INSTRUCTOR_PORTAL_DOMAIN_NAMES  instructor.example.com
-//     WATTLE_DEVELOPMENT_ADMIN_PORTAL_DOMAIN_NAMES       admin.example.com
-//     WATTLE_DEVELOPMENT_LESSON_MEDIA_DOMAIN_NAMES       media.example.com
+//     DISCAVA_DEVELOPMENT_STUDENT_PORTAL_DOMAIN_NAMES     example.com,www.example.com
+//     DISCAVA_DEVELOPMENT_INSTRUCTOR_PORTAL_DOMAIN_NAMES  instructor.example.com
+//     DISCAVA_DEVELOPMENT_ADMIN_PORTAL_DOMAIN_NAMES       admin.example.com
+//     DISCAVA_DEVELOPMENT_LESSON_MEDIA_DOMAIN_NAMES       media.example.com
 //
 // A domain is only applied when its certificate ARN is also set. Portal
 // domains are picked up automatically as API CORS origins and Cognito
@@ -28,14 +28,14 @@ import type { StagesConfig } from './stages.types.js';
 //
 // HLS video playback additionally needs a shared parent domain for signed
 // cookies, independent of the certificate/domainNames above:
-//     WATTLE_DEVELOPMENT_LESSON_MEDIA_COOKIE_DOMAIN      example.com
+//     DISCAVA_DEVELOPMENT_LESSON_MEDIA_COOKIE_DOMAIN      example.com
 export default {
   projects: {
     'packages/infra': {
       stages: {
         // No credentials/region set yet — deploys use your active AWS CLI
         // credentials and CDK_DEFAULT_REGION until these are configured.
-        'wattle-development': {
+        'discava-development': {
           components: {
             identity: { enableWaf: false, enableMfa: false },
             coreApi: { enableWaf: false, enableKmsEncryption: false },
@@ -54,7 +54,7 @@ export default {
             },
           },
         },
-        'wattle-production': {
+        'discava-production': {
           components: {
             identity: { enableWaf: true, enableMfa: true },
             coreApi: {

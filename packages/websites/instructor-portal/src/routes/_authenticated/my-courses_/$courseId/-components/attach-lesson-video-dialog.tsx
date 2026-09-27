@@ -1,9 +1,9 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button } from '@wattle/common-shadcn/components/ui/button';
+
+import { Button } from '@discava/common-shadcn/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -11,10 +11,11 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@wattle/common-shadcn/components/ui/dialog';
-import { Input } from '@wattle/common-shadcn/components/ui/input';
-import { Textarea } from '@wattle/common-shadcn/components/ui/textarea';
-import { cn } from '@wattle/common-shadcn/lib/utils';
+} from '@discava/common-shadcn/components/ui/dialog';
+import { Input } from '@discava/common-shadcn/components/ui/input';
+import { Textarea } from '@discava/common-shadcn/components/ui/textarea';
+import { cn } from '@discava/common-shadcn/lib/utils';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Hls from 'hls.js';
 import { Trash2, Upload } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';

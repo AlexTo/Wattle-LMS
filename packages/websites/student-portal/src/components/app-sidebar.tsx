@@ -1,8 +1,8 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { Link } from '@tanstack/react-router';
+
 import {
   Sidebar,
   SidebarContent,
@@ -12,7 +12,8 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from '@wattle/common-shadcn/components/ui/sidebar';
+} from '@discava/common-shadcn/components/ui/sidebar';
+import { Link } from '@tanstack/react-router';
 import { Home } from 'lucide-react';
 
 import Config from '../config';

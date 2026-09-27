@@ -1,5 +1,5 @@
 {
-  "name": "@wattle/instructor-portal",
+  "name": "@discava/instructor-portal",
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/websites/instructor-portal/src",
   "projectType": "application",
@@ -59,11 +59,11 @@
       "executor": "nx:run-commands",
       "dependsOn": [
         {
-          "projects": ["@wattle/instructor-api"],
+          "projects": ["@discava/instructor-api"],
           "target": "dev"
         },
         {
-          "projects": ["@wattle/core-api"],
+          "projects": ["@discava/core-api"],
           "target": "dev"
         }
       ],
@@ -94,7 +94,7 @@
       "dependsOn": [
         "format",
         {
-          "projects": ["@wattle/source"],
+          "projects": ["@discava/source"],
           "target": "license-check"
         }
       ],
@@ -115,10 +115,10 @@
     "load-runtime-config": {
       "executor": "nx:run-commands",
       "metadata": {
-        "description": "Load runtime config from your deployed stack for dev purposes. You must set your AWS CLI credentials whilst calling 'pnpm nx load-runtime-config @wattle/instructor-portal'"
+        "description": "Load runtime config from your deployed stack for dev purposes. You must set your AWS CLI credentials whilst calling 'pnpm nx load-runtime-config @discava/instructor-portal'"
       },
       "options": {
-        "command": "aws s3 cp s3://`aws cloudformation describe-stacks --query \"Stacks[?starts_with(StackName, 'wattle-')][].Outputs[] | [?contains(OutputKey, 'InstructorPortalWebsiteBucketName')].OutputValue\" --output text`/runtime-config.json \"{projectRoot}/public/runtime-config.json\""
+        "command": "aws s3 cp s3://`aws cloudformation describe-stacks --query \"Stacks[?starts_with(StackName, 'discava-')][].Outputs[] | [?contains(OutputKey, 'InstructorPortalWebsiteBucketName')].OutputValue\" --output text`/runtime-config.json \"{projectRoot}/public/runtime-config.json\""
       }
     }
   }

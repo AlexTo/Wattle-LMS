@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import { defineConfig } from 'astro/config';
@@ -7,7 +7,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import starlightBlog from 'starlight-blog';
 
-const basePath = process.env.DOCS_BASE_PATH || '/wattle-lms';
+const basePath = process.env.DOCS_BASE_PATH || '/discava';
 
 // https://astro.build/config
 export default defineConfig({

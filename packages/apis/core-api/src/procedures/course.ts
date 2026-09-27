@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import { TRPCError } from '@trpc/server';
@@ -137,7 +137,7 @@ export const viewCourse = courseProcedure
 
     // Course, its modules, their lessons, and each lesson's content items
     // all share the `curriculum` collection's partition (see
-    // @wattle/core-table's service.ts), so one query returns the whole
+    // @discava/core-table's service.ts), so one query returns the whole
     // curriculum instead of a get plus per-module/per-lesson queries.
     const {
       data: {

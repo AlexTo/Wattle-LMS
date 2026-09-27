@@ -1,6 +1,6 @@
 # Contributing Guidelines
 
-Thank you for your interest in contributing to Wattle LMS. Whether it's a bug report, new feature, correction, or additional documentation, we greatly value feedback and contributions.
+Thank you for your interest in contributing to Discava. Whether it's a bug report, new feature, correction, or additional documentation, we greatly value feedback and contributions.
 
 Please read through this document before submitting any issues or pull requests to ensure we have all the necessary information to effectively respond to your bug report or contribution. This is a young project, so for anything beyond a small fix, please open an issue to discuss the approach first; we'd hate for your time to be wasted.
 
@@ -11,7 +11,7 @@ We welcome you to use the GitHub issue tracker to report bugs or suggest feature
 When filing an issue, please check existing open, or recently closed, issues to make sure somebody else hasn't already reported it. Please try to include as much information as you can. Details like these are incredibly useful:
 
 - A reproducible test case or series of steps
-- The stage/environment you hit it in (`wattle-development` vs `wattle-production`, local vs deployed)
+- The stage/environment you hit it in (`discava-development` vs `discava-production`, local vs deployed)
 - Any modifications you've made relevant to the bug
 - Anything unusual about your environment or setup
 
@@ -48,16 +48,16 @@ Docs live in `docs/` (Astro + Starlight, deployed to GitHub Pages). Please only 
 To translate your changes locally, with AWS credentials configured for Bedrock access:
 
 ```sh
-pnpm nx run @wattle/docs:translate            # translate files changed vs main
-pnpm nx run @wattle/docs:translate -- --all   # translate everything
-pnpm nx run @wattle/docs:translate -- --dry-run
+pnpm nx run @discava/docs:translate            # translate files changed vs main
+pnpm nx run @discava/docs:translate -- --all   # translate everything
+pnpm nx run @discava/docs:translate -- --dry-run
 ```
 
 There is no CI workflow that runs this automatically yet. If your PR touches English docs, please run the translation locally and commit the result, or note in the PR that translations are pending.
 
 ## Finding Contributions to Work On
 
-Looking at the existing issues is a great way to find something to contribute. Take a look at any [`good first issue`](https://github.com/AlexTo/wattle-lms/labels/good%20first%20issue) or [`help wanted`](https://github.com/AlexTo/wattle-lms/labels/help%20wanted) issues to get started.
+Looking at the existing issues is a great way to find something to contribute. Take a look at any [`good first issue`](https://github.com/AlexTo/discava/labels/good%20first%20issue) or [`help wanted`](https://github.com/AlexTo/discava/labels/help%20wanted) issues to get started.
 
 ## Code of Conduct
 

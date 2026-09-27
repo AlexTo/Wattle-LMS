@@ -1,8 +1,8 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { Link, useLocation, useMatchRoute } from '@tanstack/react-router';
+
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -10,13 +10,14 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@wattle/common-shadcn/components/ui/breadcrumb';
-import { Separator } from '@wattle/common-shadcn/components/ui/separator';
+} from '@discava/common-shadcn/components/ui/breadcrumb';
+import { Separator } from '@discava/common-shadcn/components/ui/separator';
 import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
-} from '@wattle/common-shadcn/components/ui/sidebar';
+} from '@discava/common-shadcn/components/ui/sidebar';
+import { Link, useLocation, useMatchRoute } from '@tanstack/react-router';
 import * as React from 'react';
 import Config from '../../config';
 import { AppSidebar } from '../app-sidebar';

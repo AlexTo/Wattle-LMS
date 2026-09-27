@@ -1,30 +1,30 @@
-# @wattle/common-constructs
+# @discava/common-constructs
 
 This library was generated with [@aws/nx-plugin](https://github.com/awslabs/nx-plugin-for-aws/).
 
 ## Building
 
-Run `pnpm nx build @wattle/common-constructs [--skip-nx-cache]` to build the application.
+Run `pnpm nx build @discava/common-constructs [--skip-nx-cache]` to build the application.
 
 ## Running unit tests
 
-Run `pnpm nx test @wattle/common-constructs` to execute the unit tests via Vitest.
+Run `pnpm nx test @discava/common-constructs` to execute the unit tests via Vitest.
 
 ### Updating snapshots
 
 To update snapshots, run the following command:
 
-`pnpm nx test @wattle/common-constructs --configuration=update-snapshot`
+`pnpm nx test @discava/common-constructs --configuration=update-snapshot`
 
 ## Run lint
 
-Run `pnpm nx lint @wattle/common-constructs`
+Run `pnpm nx lint @discava/common-constructs`
 
 ### Fixable issues
 
 You can also automatiaclly fix some lint errors by running the following command:
 
-`pnpm nx lint @wattle/common-constructs --configuration=fix`
+`pnpm nx lint @discava/common-constructs --configuration=fix`
 
 ## Useful links
 

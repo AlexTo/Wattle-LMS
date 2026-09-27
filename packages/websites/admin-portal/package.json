@@ -1,5 +1,5 @@
 {
-  "name": "@wattle/admin-portal",
+  "name": "@discava/admin-portal",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -9,8 +9,8 @@
     "@tanstack/react-router": "catalog:",
     "@trpc/client": "catalog:",
     "@trpc/tanstack-react-query": "catalog:",
-    "@wattle/common-shadcn": "workspace:*",
-    "@wattle/core-api": "workspace:*",
+    "@discava/common-shadcn": "workspace:*",
+    "@discava/core-api": "workspace:*",
     "event-source-polyfill": "catalog:",
     "lucide-react": "catalog:",
     "oidc-client-ts": "catalog:",

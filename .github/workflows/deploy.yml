@@ -21,7 +21,7 @@ on:
         description: Stage to deploy (a stage name from stages.config.ts)
         type: string
         required: true
-        default: wattle-development
+        default: discava-development
 
 permissions:
   contents: read
@@ -76,8 +76,8 @@ jobs:
       # packages/common/infra-config/src/env-overrides.ts), e.g. custom domains
       # and ACM certificate ARNs that shouldn't be committed. Forward every
       # variable on this stage's GitHub environment (or the repo) whose name
-      # starts with the stage's prefix, e.g. WATTLE_DEVELOPMENT_ for
-      # wattle-development, into the environment synth runs in.
+      # starts with the stage's prefix, e.g. DISCAVA_DEVELOPMENT_ for
+      # discava-development, into the environment synth runs in.
       - name: Forward stage config overrides
         env:
           VARS_JSON: ${{ toJSON(vars) }}
@@ -114,7 +114,7 @@ jobs:
       # The execution role can only create roles carrying the stage's
       # permissions boundary, so synthesize with it applied.
       - name: Synthesize
-        run: pnpm nx run @wattle/infra:synth --skip-nx-cache --context wattle:stagePermissionsBoundary=true
+        run: pnpm nx run @discava/infra:synth --skip-nx-cache --context discava:stagePermissionsBoundary=true
 
       # A rerun of CI for an older commit (or a run that waited behind a newer
       # deploy) would otherwise redeploy stale code. Checked here, inside the
@@ -138,4 +138,4 @@ jobs:
       # warning); --role-arn hands CloudFormation the scoped execution role.
       - name: Deploy
         if: ${{ github.event_name != 'workflow_run' || steps.freshness.outputs.current == 'true' }}
-        run: pnpm nx run @wattle/infra:deploy-ci "$STAGE/*" --role-arn "$AWS_EXECUTION_ROLE_ARN"
+        run: pnpm nx run @discava/infra:deploy-ci "$STAGE/*" --role-arn "$AWS_EXECUTION_ROLE_ARN"

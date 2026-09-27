@@ -1,5 +1,5 @@
 {
-  "name": "@wattle/instructor-api",
+  "name": "@discava/instructor-api",
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/apis/instructor-api/src",
   "projectType": "library",
@@ -17,7 +17,7 @@
       {
         "generator": "ts#dynamodb#trpc-connection",
         "path": "packages/databases/core-table",
-        "name": "@wattle/core-table"
+        "name": "@discava/core-table"
       }
     ]
   },
@@ -51,7 +51,7 @@
       "executor": "nx:run-commands",
       "dependsOn": [
         {
-          "projects": ["@wattle/core-table"],
+          "projects": ["@discava/core-table"],
           "target": "dev"
         }
       ],
@@ -85,7 +85,7 @@
       "dependsOn": [
         "format",
         {
-          "projects": ["@wattle/source"],
+          "projects": ["@discava/source"],
           "target": "license-check"
         }
       ],

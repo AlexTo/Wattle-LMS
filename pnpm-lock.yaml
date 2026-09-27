@@ -469,7 +469,7 @@ importers:
       '@trpc/server':
         specifier: 'catalog:'
         version: 11.19.0(typescript@6.0.3)
-      '@wattle/core-table':
+      '@discava/core-table':
         specifier: workspace:*
         version: link:../../databases/core-table
       aws-xray-sdk-core:
@@ -545,7 +545,7 @@ importers:
       '@trpc/server':
         specifier: 'catalog:'
         version: 11.19.0(typescript@6.0.3)
-      '@wattle/core-table':
+      '@discava/core-table':
         specifier: workspace:*
         version: link:../../databases/core-table
       aws-xray-sdk-core:
@@ -591,10 +591,10 @@ importers:
       '@trpc/server':
         specifier: 'catalog:'
         version: 11.19.0(typescript@6.0.3)
-      '@wattle/core-api':
+      '@discava/core-api':
         specifier: workspace:*
         version: link:../../apis/core-api
-      '@wattle/instructor-api':
+      '@discava/instructor-api':
         specifier: workspace:*
         version: link:../../apis/instructor-api
       aws-cdk-lib:
@@ -622,7 +622,7 @@ importers:
       '@aws-sdk/client-dynamodb':
         specifier: 'catalog:'
         version: 3.1136.0
-      '@wattle/common-infra-config':
+      '@discava/common-infra-config':
         specifier: workspace:*
         version: link:../infra-config
       tslib:
@@ -738,7 +738,7 @@ importers:
       '@middy/core':
         specifier: 'catalog:'
         version: 7.9.2
-      '@wattle/core-table':
+      '@discava/core-table':
         specifier: workspace:*
         version: link:../databases/core-table
       electrodb:
@@ -757,10 +757,10 @@ importers:
 
   packages/infra:
     dependencies:
-      '@wattle/common-constructs':
+      '@discava/common-constructs':
         specifier: workspace:*
         version: link:../common/constructs
-      '@wattle/common-infra-config':
+      '@discava/common-infra-config':
         specifier: workspace:*
         version: link:../common/infra-config
       aws-cdk-lib:
@@ -793,10 +793,10 @@ importers:
       '@trpc/tanstack-react-query':
         specifier: 'catalog:'
         version: 11.19.0(@tanstack/react-query@5.103.1(react@19.3.0))(@trpc/client@11.19.0(@trpc/server@11.19.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.19.0(typescript@6.0.3))(react@19.3.0)(typescript@6.0.3)
-      '@wattle/common-shadcn':
+      '@discava/common-shadcn':
         specifier: workspace:*
         version: link:../../common/shadcn
-      '@wattle/core-api':
+      '@discava/core-api':
         specifier: workspace:*
         version: link:../../apis/core-api
       event-source-polyfill:
@@ -857,13 +857,13 @@ importers:
       '@trpc/tanstack-react-query':
         specifier: 'catalog:'
         version: 11.19.0(@tanstack/react-query@5.103.1(react@19.3.0))(@trpc/client@11.19.0(@trpc/server@11.19.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.19.0(typescript@6.0.3))(react@19.3.0)(typescript@6.0.3)
-      '@wattle/common-shadcn':
+      '@discava/common-shadcn':
         specifier: workspace:*
         version: link:../../common/shadcn
-      '@wattle/core-api':
+      '@discava/core-api':
         specifier: workspace:*
         version: link:../../apis/core-api
-      '@wattle/instructor-api':
+      '@discava/instructor-api':
         specifier: workspace:*
         version: link:../../apis/instructor-api
       event-source-polyfill:
@@ -924,10 +924,10 @@ importers:
       '@trpc/tanstack-react-query':
         specifier: 'catalog:'
         version: 11.19.0(@tanstack/react-query@5.103.1(react@19.3.0))(@trpc/client@11.19.0(@trpc/server@11.19.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.19.0(typescript@6.0.3))(react@19.3.0)(typescript@6.0.3)
-      '@wattle/common-shadcn':
+      '@discava/common-shadcn':
         specifier: workspace:*
         version: link:../../common/shadcn
-      '@wattle/core-api':
+      '@discava/core-api':
         specifier: workspace:*
         version: link:../../apis/core-api
       event-source-polyfill:
