@@ -609,7 +609,12 @@ export class ApplicationStack extends Stack {
     // A dedicated group (rather than the account's default one) so the
     // scheduler:CreateSchedule/UpdateSchedule grant below can be scoped to
     // just these schedules instead of every schedule in the account.
-    const scheduleGroup = new ScheduleGroup(this, 'TranscodeCleanupGroup');
+    // Destroyed with the stack: CDK names the group deterministically, so a
+    // retained group blocks the stack from ever being created again, and its
+    // one-time schedules are only meaningful while the stack exists.
+    const scheduleGroup = new ScheduleGroup(this, 'TranscodeCleanupGroup', {
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
 
     // EventBridge Scheduler assumes this to invoke the cleanup Lambda on
     // each schedule's behalf -- distinct from the instructor-api handlers'
