@@ -57,6 +57,11 @@ set -euo pipefail
 #                        DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME (otherwise
 #                        the stage's config, then the GitHub environment's
 #                        current variables)
+#   <STAGE>_ROOT_DOMAIN  root domain each component's domain defaults to a
+#                        subdomain of, e.g. DISCAVA_DEVELOPMENT_ROOT_DOMAIN=
+#                        example.com suggests core-api.example.com (only used
+#                        where neither the stage's config nor the GitHub
+#                        environment sets that component's domain)
 #   <STAGE>_LESSON_MEDIA_COOKIE_DOMAIN
 #                        shared cookie domain default for HLS playback (same
 #                        fallback order as above)
@@ -165,11 +170,20 @@ section() {
   echo "== $1"
 }
 
+# paragraph <text>: prints text word-wrapped to the terminal's width, at most
+# 80 columns, so narrow terminals don't re-wrap pre-broken lines mid-sentence.
+paragraph() {
+  local width
+  width="$(tput cols 2>/dev/null || echo 80)"
+  [[ "$width" =~ ^[0-9]+$ && "$width" -le 80 ]] || width=80
+  fold -s -w "$width" <<<"$1" | sed 's/ *$//'
+}
+
 # Prints `<stage>` lines, or `<field>=<value>` lines for one stage's config.
 read_stages_config() {
   (
     cd "$REPO_ROOT"
-    pnpm exec tsx --eval "
+    pnpm --silent exec tsx --eval "
       import('./packages/common/infra-config/src/index.ts').then((m) => {
         const [project, stage] = process.argv.slice(1);
         if (!stage) return console.log(m.listStageNames(project).join('\n'));
@@ -258,6 +272,24 @@ common_domain_suffix() {
   echo "$result"
 }
 
+# root_domain_names <comma-separated labels> <root>: prints each label as a
+# subdomain of root, with @ standing for root itself, e.g. @,www and
+# example.com -> example.com,www.example.com.
+root_domain_names() {
+  local root="$2" label result=""
+  local -a labels
+  IFS=',' read -r -a labels <<<"$1"
+  for label in "${labels[@]}"; do
+    if [[ "$label" == @ ]]; then
+      label="$root"
+    else
+      label="$label.$root"
+    fi
+    result="${result:+$result,}$label"
+  done
+  echo "$result"
+}
+
 # certificate_covers_all <comma-separated names> <comma-separated domains>
 certificate_covers_all() {
   local names="$1" domain
@@ -300,8 +332,7 @@ resolve_oidc_subject_prefix() {
   fi
 
   if ! github_cli_ready; then
-    echo "Couldn't read $GITHUB_REPOSITORY's OIDC subject settings (needs an authenticated gh CLI); assuming the default prefix repo:$GITHUB_REPOSITORY." >&2
-    echo "If the repository uses immutable subject claims, set GITHUB_OIDC_SUBJECT_PREFIX instead." >&2
+    paragraph "Couldn't read $GITHUB_REPOSITORY's OIDC subject settings (needs an authenticated gh CLI); assuming the default prefix repo:$GITHUB_REPOSITORY. If the repository uses immutable subject claims, set GITHUB_OIDC_SUBJECT_PREFIX instead." >&2
     echo "repo:$GITHUB_REPOSITORY"
     return
   fi
@@ -312,8 +343,7 @@ resolve_oidc_subject_prefix() {
   local settings use_default prefix
   if ! settings="$(gh api "repos/$GITHUB_REPOSITORY/actions/oidc/customization/sub" \
     --jq '"\(.use_default)\t\(.sub_claim_prefix // "")"')"; then
-    echo "Couldn't read $GITHUB_REPOSITORY's OIDC subject settings from GitHub." >&2
-    echo "Re-run, or set GITHUB_OIDC_SUBJECT_PREFIX to the part of the subject before ':environment:'." >&2
+    paragraph "Couldn't read $GITHUB_REPOSITORY's OIDC subject settings from GitHub. Re-run, or set GITHUB_OIDC_SUBJECT_PREFIX to the part of the subject before ':environment:'." >&2
     return 1
   fi
   IFS=$'\t' read -r use_default prefix <<<"$settings"
@@ -321,8 +351,7 @@ resolve_oidc_subject_prefix() {
   case "$use_default" in
     true) echo "${prefix:-repo:$GITHUB_REPOSITORY}" ;;
     false)
-      echo "$GITHUB_REPOSITORY uses a custom OIDC subject claim template, so its tokens' subject can't be predicted here." >&2
-      echo "Set GITHUB_OIDC_SUBJECT_PREFIX to the part of the subject before ':environment:' and re-run." >&2
+      paragraph "$GITHUB_REPOSITORY uses a custom OIDC subject claim template, so its tokens' subject can't be predicted here. Set GITHUB_OIDC_SUBJECT_PREFIX to the part of the subject before ':environment:' and re-run." >&2
       return 1
       ;;
     *)
@@ -411,7 +440,7 @@ fi
 
 if ! CALLER_ARN="$(aws sts get-caller-identity --query Arn --output text 2>&1)"; then
   echo "$CALLER_ARN" >&2
-  echo "Couldn't authenticate with AWS. Log in first (e.g. \`aws sso login${selected_profile:+ --profile $selected_profile}\` or \`aws configure\`), then re-run." >&2
+  paragraph "Couldn't authenticate with AWS. Log in first (e.g. \`aws sso login${selected_profile:+ --profile $selected_profile}\` or \`aws configure\`), then re-run." >&2
   exit 1
 fi
 readonly CALLER_ARN
@@ -512,18 +541,28 @@ DOMAIN_VARIABLES_TO_DELETE=()
 # Keyed by component name; the domain(s) actually entered below, so the
 # cookie-domain prompt after the loop can default off of them.
 declare -A RESOLVED_DOMAINS=()
-echo "Each component can be served from a custom domain instead of its generated"
-echo "*.execute-api.amazonaws.com / *.cloudfront.net hostname (leave blank for none)."
-echo "API certificates must be in $AWS_REGION; portal and media certificates, served"
-echo "by CloudFront, in $GLOBAL_REGION. DNS records aren't created for you."
+paragraph "Each component can be served from a custom domain instead of its generated *.execute-api.amazonaws.com / *.cloudfront.net hostname (leave blank for none). API certificates must be in $AWS_REGION; portal and media certificates, served by CloudFront, in $GLOBAL_REGION. DNS records aren't created for you."
+echo ""
+paragraph "A root domain suggests a subdomain of it for each component not already configured, e.g. core-api.example.com for example.com."
+root_domain_variable="${STAGE_ENV_PREFIX}ROOT_DOMAIN"
+while true; do
+  ask_optional ROOT_DOMAIN "Root domain" "${!root_domain_variable:-}"
+  ROOT_DOMAIN="${ROOT_DOMAIN// /}"
+  ROOT_DOMAIN="${ROOT_DOMAIN,,}"
+  [[ -n "$ROOT_DOMAIN" && ! "$ROOT_DOMAIN" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]] || break
+  echo "Not a valid domain name: $ROOT_DOMAIN" >&2
+  [[ "$ASSUME_YES" == false ]] || exit 1
+done
+readonly ROOT_DOMAIN
+# component|env segment|label|kind|subdomain labels under the root domain
 for spec in \
-  "coreApi|CORE_API|Core API|api" \
-  "instructorApi|INSTRUCTOR_API|Instructor API|api" \
-  "studentPortal|STUDENT_PORTAL|Student portal|cloudfront" \
-  "instructorPortal|INSTRUCTOR_PORTAL|Instructor portal|cloudfront" \
-  "adminPortal|ADMIN_PORTAL|Admin portal|cloudfront" \
-  "lessonMedia|LESSON_MEDIA|Lesson media|cloudfront"; do
-  IFS='|' read -r component segment label kind <<<"$spec"
+  "coreApi|CORE_API|Core API|api|core-api" \
+  "instructorApi|INSTRUCTOR_API|Instructor API|api|instructor-api" \
+  "studentPortal|STUDENT_PORTAL|Student portal|cloudfront|@,www" \
+  "instructorPortal|INSTRUCTOR_PORTAL|Instructor portal|cloudfront|instructor" \
+  "adminPortal|ADMIN_PORTAL|Admin portal|cloudfront|admin" \
+  "lessonMedia|LESSON_MEDIA|Lesson media|cloudfront|lesson-media"; do
+  IFS='|' read -r component segment label kind root_labels <<<"$spec"
   if [[ "$kind" == api ]]; then
     # API Gateway custom domains take a single name.
     domain_variable="$STAGE_ENV_PREFIX${segment}_DOMAIN_NAME"
@@ -546,8 +585,11 @@ for spec in \
     current_certificate="$(github_environment_variable "$certificate_variable")"
   fi
 
+  root_domains=""
+  [[ -z "$ROOT_DOMAIN" ]] || root_domains="$(root_domain_names "$root_labels" "$ROOT_DOMAIN")"
+
   while true; do
-    ask_optional domains "$domain_question" "${STAGE_DOMAINS[$component]:-$current_domains}"
+    ask_optional domains "$domain_question" "${STAGE_DOMAINS[$component]:-${current_domains:-$root_domains}}"
     domains="${domains// /}"
     domains="${domains,,}"
     domain_error=""
@@ -637,10 +679,7 @@ if [[ -n "${RESOLVED_DOMAINS[lessonMedia]:-}" ]]; then
   fi
 
   echo ""
-  echo "HLS playback needs a domain shared by Instructor API and Lesson media"
-  echo "(e.g. example.com for instructor-api.example.com and"
-  echo "lesson-media.example.com) -- a cookie can only be set for the issuing"
-  echo "domain or one of its parents."
+  paragraph "HLS playback needs a domain shared by Instructor API and Lesson media (e.g. example.com for instructor-api.example.com and lesson-media.example.com) -- a cookie can only be set for the issuing domain or one of its parents."
   while true; do
     ask_optional cookie_domain "Shared cookie domain for HLS playback" "$cookie_domain_default"
     cookie_domain="${cookie_domain,,}"
@@ -1562,18 +1601,14 @@ print_next_steps() {
     for variable in "${DOMAIN_VARIABLES_TO_DELETE[@]}"; do
       echo "  Remove:     $variable"
     done
-    echo "To deploy it automatically whenever CI passes on main, also set the"
-    echo "repository variable AUTO_DEPLOY_STAGE=$TARGET_STAGE."
+    paragraph "To deploy it automatically whenever CI passes on main, also set the repository variable AUTO_DEPLOY_STAGE=$TARGET_STAGE."
     echo ""
   fi
   if [[ ${#DOMAIN_VARIABLES[@]} -gt 0 ]]; then
-    echo "After the next deploy, point each custom domain's DNS record at its API"
-    echo "Gateway custom domain or CloudFront distribution; until then the domains"
-    echo "won't resolve, although the portals and signed media URLs already use them."
+    paragraph "After the next deploy, point each custom domain's DNS record at its API Gateway custom domain or CloudFront distribution; until then the domains won't resolve, although the portals and signed media URLs already use them."
     echo ""
   fi
-  echo "Anyone who can run workflows can deploy this stage. For production-like"
-  echo "stages, add required reviewers and restrict deployments to main at:"
+  paragraph "Anyone who can run workflows can deploy this stage. For production-like stages, add required reviewers and restrict deployments to main at:"
   echo "  https://github.com/$GITHUB_REPOSITORY/settings/environments"
   echo ""
   echo "Deploy from the Actions tab (Deploy > Run workflow), or:"

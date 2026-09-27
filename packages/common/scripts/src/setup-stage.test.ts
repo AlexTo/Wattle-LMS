@@ -23,7 +23,11 @@ const SCRIPT = join(REPO_ROOT, 'scripts/setup-stage.sh');
 const REPOSITORY = 'AlexTo/discava';
 const IMMUTABLE_PREFIX = 'repo:AlexTo@296212/discava@1340223666';
 
-/** How the stub `gh` answers the OIDC subject customization request. */
+/**
+ * How the stub `gh` answers the OIDC subject customization request. Stage
+ * environment variables it reports as already set come from
+ * GH_VARIABLE_<name>.
+ */
 type OidcSettings =
   | { kind: 'response'; useDefault: boolean; prefix?: string }
   | { kind: 'request-fails' }
@@ -32,7 +36,8 @@ type OidcSettings =
 // Records every call and keeps each policy document it's handed, so tests can
 // assert what the script would have sent to AWS without touching AWS. ACM
 // answers come from ACM_CERTIFICATES (list-certificates rows, all of key type
-// ACM_KEY_TYPE, default RSA_2048) and ACM_DESCRIBE (describe-certificate
+// ACM_KEY_TYPE, default RSA_2048; ACM_CERTIFICATES_<region with underscores>
+// takes its place for that region) and ACM_DESCRIBE (describe-certificate
 // output), tab-separated like --output text. Like ACM, list-certificates only
 // returns RSA_1024/RSA_2048 certificates unless --includes keyTypes says
 // otherwise.
@@ -41,10 +46,16 @@ echo "aws $*" >> "$OUT/calls.log"
 case "$1 $2" in
   "sts get-caller-identity") echo "arn:aws:sts::111122223333:assumed-role/Admin/test"; exit;;
   "acm list-certificates")
-    key_types="RSA_1024,RSA_2048"
-    for arg in "$@"; do case "$arg" in keyTypes=*) key_types="\${arg#keyTypes=}";; esac; done
-    if [[ -n "\${ACM_CERTIFICATES:-}" && ",$key_types," == *",\${ACM_KEY_TYPE:-RSA_2048},"* ]]; then
-      printf '%b\\n' "$ACM_CERTIFICATES"
+    key_types="RSA_1024,RSA_2048" region=""
+    for arg in "$@"; do
+      case "$arg" in keyTypes=*) key_types="\${arg#keyTypes=}";; esac
+      [[ "\${previous:-}" == --region ]] && region="$arg"
+      previous="$arg"
+    done
+    regional_certificates="ACM_CERTIFICATES_\${region//-/_}"
+    certificates="\${!regional_certificates:-\${ACM_CERTIFICATES:-}}"
+    if [[ -n "$certificates" && ",$key_types," == *",\${ACM_KEY_TYPE:-RSA_2048},"* ]]; then
+      printf '%b\\n' "$certificates"
     fi
     exit;;
   "acm describe-certificate") [[ -n "\${ACM_DESCRIBE:-}" ]] || { echo "ResourceNotFoundException" >&2; exit 254; }; printf '%b\\n' "$ACM_DESCRIBE"; exit;;
@@ -67,6 +78,10 @@ const ghStub = (settings: OidcSettings): string => {
 echo "gh $*" >> "$OUT/calls.log"
 [[ "$1" == auth ]] && exit ${settings.kind === 'no-gh' ? 1 : 0}
 if [[ "$*" == *actions/oidc/customization/sub* ]]; then ${oidcResponse}; fi
+if [[ "$1" == api && "$2" == */variables/* ]]; then
+  variable="GH_VARIABLE_\${2##*/}"
+  [[ -z "\${!variable:-}" ]] || echo "\${!variable}"
+fi
 exit 0
 `;
 };
@@ -111,7 +126,8 @@ const runSetup = (settings: OidcSettings, env: Record<string, string> = {}) => {
     : undefined;
   return {
     status: result.status,
-    output: `${result.stdout}${result.stderr}`,
+    // Whitespace-collapsed, since messages are wrapped to the terminal width.
+    output: `${result.stdout}${result.stderr}`.replace(/\s+/g, ' '),
     iamCalls: calls.filter((call) => call.startsWith('aws iam ')),
     ghVariableCalls: calls.filter((call) => call.startsWith('gh variable ')),
     trustedSubject,
@@ -289,6 +305,70 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
 
     expect(status).not.toBe(0);
     expect(output).toContain("doesn't cover");
+    expect(iamCalls).toEqual([]);
+  });
+
+  it('suggests a subdomain of the root domain for each component', () => {
+    const { status, ghVariableCalls } = runSetup(GH_READY, {
+      DISCAVA_DEVELOPMENT_ROOT_DOMAIN: 'Example.com',
+      ACM_CERTIFICATES_ap_southeast_2: `${REGIONAL_CERTIFICATE_ARN}\\texample.com,*.example.com`,
+      ACM_CERTIFICATES_us_east_1: `${CERTIFICATE_ARN}\\texample.com,*.example.com`,
+      ACM_DESCRIBE: 'ISSUED\\tRSA-2048\\texample.com,*.example.com',
+    });
+
+    expect(status).toBe(0);
+    const set = (name: string, body: string) =>
+      `gh variable set DISCAVA_DEVELOPMENT_${name} --repo ${REPOSITORY} --env discava-development --body ${body}`;
+    expect(ghVariableCalls).toEqual(
+      expect.arrayContaining([
+        set('CORE_API_DOMAIN_NAME', 'core-api.example.com'),
+        set('CORE_API_CERTIFICATE_ARN', REGIONAL_CERTIFICATE_ARN),
+        set('INSTRUCTOR_API_DOMAIN_NAME', 'instructor-api.example.com'),
+        set('INSTRUCTOR_API_CERTIFICATE_ARN', REGIONAL_CERTIFICATE_ARN),
+        set('STUDENT_PORTAL_DOMAIN_NAMES', 'example.com,www.example.com'),
+        set('STUDENT_PORTAL_CERTIFICATE_ARN', CERTIFICATE_ARN),
+        set('INSTRUCTOR_PORTAL_DOMAIN_NAMES', 'instructor.example.com'),
+        set('ADMIN_PORTAL_DOMAIN_NAMES', 'admin.example.com'),
+        set('LESSON_MEDIA_DOMAIN_NAMES', 'lesson-media.example.com'),
+        set('LESSON_MEDIA_CERTIFICATE_ARN', CERTIFICATE_ARN),
+        set('LESSON_MEDIA_COOKIE_DOMAIN', 'example.com'),
+      ]),
+    );
+  });
+
+  it('keeps domains the stage config or GitHub already sets over the root domain', () => {
+    const { status, ghVariableCalls } = runSetup(GH_READY, {
+      DISCAVA_DEVELOPMENT_ROOT_DOMAIN: 'example.com',
+      DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME: 'api.example.com',
+      GH_VARIABLE_DISCAVA_DEVELOPMENT_ADMIN_PORTAL_DOMAIN_NAMES:
+        'backoffice.example.com',
+      ACM_CERTIFICATES_ap_southeast_2: `${REGIONAL_CERTIFICATE_ARN}\\t*.example.com,example.com`,
+      ACM_CERTIFICATES_us_east_1: `${CERTIFICATE_ARN}\\t*.example.com,example.com`,
+      ACM_DESCRIBE: 'ISSUED\\tRSA-2048\\t*.example.com,example.com',
+    });
+
+    expect(status).toBe(0);
+    const domainCalls = ghVariableCalls.filter((call) =>
+      call.includes('_DOMAIN_NAME'),
+    );
+    expect(domainCalls).toContain(
+      `gh variable set DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME --repo ${REPOSITORY} --env discava-development --body api.example.com`,
+    );
+    expect(domainCalls).toContain(
+      `gh variable set DISCAVA_DEVELOPMENT_ADMIN_PORTAL_DOMAIN_NAMES --repo ${REPOSITORY} --env discava-development --body backoffice.example.com`,
+    );
+    expect(domainCalls).toContain(
+      `gh variable set DISCAVA_DEVELOPMENT_INSTRUCTOR_PORTAL_DOMAIN_NAMES --repo ${REPOSITORY} --env discava-development --body instructor.example.com`,
+    );
+  });
+
+  it('rejects an invalid root domain before touching IAM', () => {
+    const { status, output, iamCalls } = runSetup(GH_READY, {
+      DISCAVA_DEVELOPMENT_ROOT_DOMAIN: 'example_com',
+    });
+
+    expect(status).not.toBe(0);
+    expect(output).toContain('Not a valid domain name: example_com');
     expect(iamCalls).toEqual([]);
   });
 
