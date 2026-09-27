@@ -226,6 +226,26 @@ describe('setup-stage.sh execution policy', { timeout: 60_000 }, () => {
     );
   });
 
+  it("allows vended log delivery from the stage's buckets", () => {
+    // S3 server access logs reach CloudWatch Logs through a delivery source
+    // on the bucket, which needs this on the bucket itself.
+    const { status, executionPolicy } = runSetup({
+      kind: 'response',
+      useDefault: true,
+    });
+
+    expect(status).toBe(0);
+    expect(executionPolicy.Statement).toContainEqual(
+      expect.objectContaining({
+        Effect: 'Allow',
+        Action: expect.arrayContaining([
+          's3:AllowVendedLogDeliveryForResource',
+        ]),
+        Resource: ['arn:aws:s3:::discava-development-*'],
+      }),
+    );
+  });
+
   it("allows deleting the schedules left in the stage's schedule groups", () => {
     // Deleting a schedule group deletes its schedules first, each authorized
     // on the schedule itself rather than the group.
