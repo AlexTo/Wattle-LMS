@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import {
@@ -321,7 +321,7 @@ export class UserIdentity extends Construct {
     new UserPoolDomain(this, 'UserPoolDomain', {
       userPool,
       cognitoDomain: {
-        domainPrefix: `wattle-${Stack.of(this).account}`,
+        domainPrefix: `discava-${Stack.of(this).account}`,
       },
       managedLoginVersion: ManagedLoginVersion.NEWER_MANAGED_LOGIN,
     });

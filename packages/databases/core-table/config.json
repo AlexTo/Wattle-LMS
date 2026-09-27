@@ -2,9 +2,9 @@
   "runtimeConfigKey": "CoreTable",
   "localDev": {
     "port": 8000,
-    "tableName": "wattle-core-table",
+    "tableName": "discava-core-table",
     "image": "public.ecr.aws/aws-dynamodb-local/aws-dynamodb-local:latest",
-    "containerName": "wattle-dynamodb",
+    "containerName": "discava-dynamodb",
     "containerEngine": "docker"
   },
   "tableConfig": {

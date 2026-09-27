@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -68,7 +68,7 @@ const CLEANUP_LAMBDA_ARN =
   'arn:aws:lambda:ap-southeast-2:123456789012:function:TranscodeCleanup';
 const SCHEDULER_ROLE_ARN =
   'arn:aws:iam::123456789012:role/TranscodeCleanupSchedulerRole';
-const SCHEDULE_GROUP_NAME = 'wattle-transcode-cleanup';
+const SCHEDULE_GROUP_NAME = 'discava-transcode-cleanup';
 
 beforeEach(() => {
   vi.clearAllMocks();

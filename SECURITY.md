@@ -6,7 +6,7 @@ If you discover a potential security issue in this project, please report it pri
 
 ## Security features
 
-Wattle LMS ships with security controls enabled by default, and only relaxes them in the `wattle-development` stage, meant for development, testing, and evaluation (see [`stages.config.ts`](packages/common/infra-config/src/stages.config.ts)):
+Discava ships with security controls enabled by default, and only relaxes them in the `discava-development` stage, meant for development, testing, and evaluation (see [`stages.config.ts`](packages/common/infra-config/src/stages.config.ts)):
 
 - Cognito authentication with MFA required, fronting both the API and portals
 - WAF on the API Gateway, CloudFront distributions, and Cognito user pool
@@ -15,4 +15,4 @@ Wattle LMS ships with security controls enabled by default, and only relaxes the
 - Infrastructure security scanning with [Checkov](https://www.checkov.io) (`infra:checkov`, part of the `build` target)
 - Credential scanning with `git-secrets` on every commit (`.husky/pre-commit`)
 
-The `wattle-production` stage is the hardened baseline; deploy it (rather than `wattle-development`) for anything beyond development, testing, or evaluation.
+The `discava-production` stage is the hardened baseline; deploy it (rather than `discava-development`) for anything beyond development, testing, or evaluation.

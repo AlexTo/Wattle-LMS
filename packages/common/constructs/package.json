@@ -1,5 +1,5 @@
 {
-  "name": "@wattle/common-constructs",
+  "name": "@discava/common-constructs",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -8,8 +8,8 @@
     "@aws-sdk/client-iam": "catalog:",
     "@aws-sdk/client-secrets-manager": "catalog:",
     "@trpc/server": "catalog:",
-    "@wattle/core-api": "workspace:*",
-    "@wattle/instructor-api": "workspace:*",
+    "@discava/core-api": "workspace:*",
+    "@discava/instructor-api": "workspace:*",
     "aws-cdk-lib": "catalog:",
     "constructs": "catalog:",
     "tslib": "^2.3.0"

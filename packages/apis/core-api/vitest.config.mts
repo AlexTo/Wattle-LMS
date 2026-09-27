@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import { fileURLToPath } from 'url';
@@ -10,17 +10,17 @@ export default defineConfig(() => ({
   cacheDir: '../../../node_modules/.vite/packages/apis/core-api',
   resolve: {
     alias: {
-      // @wattle/core-table has no package.json `main`/`exports`, so it
+      // @discava/core-table has no package.json `main`/`exports`, so it
       // resolves for tsc/tsx via tsconfig `paths` but not for Vite; alias it
       // directly to source so tests can import/mock it.
-      '@wattle/core-table': fileURLToPath(
+      '@discava/core-table': fileURLToPath(
         new URL('../../databases/core-table/src/index.ts', import.meta.url),
       ),
     },
   },
   test: {
     passWithNoTests: true,
-    name: '@wattle/core-api',
+    name: '@discava/core-api',
     watch: false,
     globals: true,
     environment: 'jsdom',

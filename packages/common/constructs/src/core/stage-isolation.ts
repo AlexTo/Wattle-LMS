@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import {
@@ -21,7 +21,7 @@ import type { IConstruct } from 'constructs';
  * unset.
  */
 export const STAGE_PERMISSIONS_BOUNDARY_CONTEXT_KEY =
-  'wattle:stagePermissionsBoundary';
+  'discava:stagePermissionsBoundary';
 
 /**
  * Name of the managed policy scripts/setup-stage.sh creates as the

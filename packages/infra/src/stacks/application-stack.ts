@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import {
@@ -18,7 +18,7 @@ import {
   suppressRules,
   UserIdentity,
   VideoTranscodePipeline,
-} from '@wattle/common-constructs';
+} from '@discava/common-constructs';
 import type {
   AdminPortalComponentConfig,
   CoreApiComponentConfig,
@@ -28,7 +28,7 @@ import type {
   InstructorPortalComponentConfig,
   LessonMediaComponentConfig,
   StudentPortalComponentConfig,
-} from '@wattle/common-infra-config';
+} from '@discava/common-infra-config';
 import { CfnResource, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
 import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { Mfa, UserPoolOperation } from 'aws-cdk-lib/aws-cognito';
@@ -550,7 +550,7 @@ export class ApplicationStack extends Stack {
     );
     // The upload bucket's name is resolved at runtime via RuntimeConfig/
     // AppConfig, granted below alongside the DynamoDB table name lookup
-    // @wattle/core-table already needs.
+    // @discava/core-table already needs.
     const runtimeConfig = RuntimeConfig.ensure(this);
     transcodeComplete.addEnvironment(
       'RUNTIME_CONFIG_APP_ID',
@@ -609,7 +609,12 @@ export class ApplicationStack extends Stack {
     // A dedicated group (rather than the account's default one) so the
     // scheduler:CreateSchedule/UpdateSchedule grant below can be scoped to
     // just these schedules instead of every schedule in the account.
-    const scheduleGroup = new ScheduleGroup(this, 'TranscodeCleanupGroup');
+    // Destroyed with the stack: CDK names the group deterministically, so a
+    // retained group blocks the stack from ever being created again, and its
+    // one-time schedules are only meaningful while the stack exists.
+    const scheduleGroup = new ScheduleGroup(this, 'TranscodeCleanupGroup', {
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
 
     // EventBridge Scheduler assumes this to invoke the cleanup Lambda on
     // each schedule's behalf -- distinct from the instructor-api handlers'

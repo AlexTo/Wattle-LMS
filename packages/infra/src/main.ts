@@ -1,13 +1,13 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import {
   App,
   StageIsolationSynthesizer,
   stagePermissionsBoundary,
-} from '@wattle/common-constructs';
-import { listStageNames, resolveStage } from '@wattle/common-infra-config';
+} from '@discava/common-constructs';
+import { listStageNames, resolveStage } from '@discava/common-infra-config';
 import { ApplicationStage } from './stages/application-stage.js';
 
 // Per-stage asset prefixes and (in CI) permissions boundaries keep stages that

@@ -1,14 +1,14 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { Input } from '@wattle/common-shadcn/components/ui/input';
-import { Separator } from '@wattle/common-shadcn/components/ui/separator';
+import { Input } from '@discava/common-shadcn/components/ui/input';
+import { Separator } from '@discava/common-shadcn/components/ui/separator';
 import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
-} from '@wattle/common-shadcn/components/ui/sidebar';
+} from '@discava/common-shadcn/components/ui/sidebar';
 import { Search } from 'lucide-react';
 import * as React from 'react';
 import Config from '../../config';

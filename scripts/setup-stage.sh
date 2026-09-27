@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
 #
-# Copyright Wattle LMS Contributors. All Rights Reserved.
+# Copyright Discava Contributors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 set -euo pipefail
 
-# Guided deployment setup for a Wattle LMS stage.
+# Guided deployment setup for a Discava stage.
 #
 # Run this once per deployment stage (as defined in
 # packages/common/infra-config/src/stages.config.ts), from a clone of the
@@ -17,11 +17,15 @@ set -euo pipefail
 # - creates or updates the GitHub deploy role assumed by the workflow
 # - creates or updates the CloudFormation execution role passed to
 #   `cdk deploy --role-arn`
+# - creates or updates the repository's Docker login role (shared by every
+#   stage), which CI assumes only to authenticate image pulls from Amazon ECR
+#   Public, whose anonymous pulls shared GitHub runner IPs can rate-limit
 # - creates or updates the stage's permissions boundary policy, which every
 #   role the execution role creates must carry
 # - optionally bootstraps CDK in the regions the stage deploys to
-# - optionally creates the matching GitHub environment and sets its variables
-#   (requires an authenticated `gh` CLI)
+# - optionally creates the matching GitHub environment and sets its variables,
+#   plus the repository's AWS_DOCKER_LOGIN_ROLE_ARN variable (requires an
+#   authenticated `gh` CLI)
 # - optionally configures custom domains and their ACM certificates for the
 #   APIs, portals and lesson media, plus (when lesson media has a domain) the
 #   shared parent domain HLS playback's signed cookies need, stored as
@@ -54,13 +58,18 @@ set -euo pipefail
 #   AWS_REGION           used when the stage config sets no region
 #   <STAGE>_<COMPONENT>_DOMAIN_NAME(S), <STAGE>_<COMPONENT>_CERTIFICATE_ARN
 #                        custom domain defaults, e.g.
-#                        WATTLE_DEVELOPMENT_CORE_API_DOMAIN_NAME (otherwise
+#                        DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME (otherwise
 #                        the stage's config, then the GitHub environment's
 #                        current variables)
+#   <STAGE>_ROOT_DOMAIN  root domain each component's domain defaults to a
+#                        subdomain of, e.g. DISCAVA_DEVELOPMENT_ROOT_DOMAIN=
+#                        example.com suggests core-api.example.com (only used
+#                        where neither the stage's config nor the GitHub
+#                        environment sets that component's domain)
 #   <STAGE>_LESSON_MEDIA_COOKIE_DOMAIN
 #                        shared cookie domain default for HLS playback (same
 #                        fallback order as above)
-#   DEPLOY_ROLE_NAME, EXECUTION_ROLE_NAME
+#   DEPLOY_ROLE_NAME, EXECUTION_ROLE_NAME, DOCKER_LOGIN_ROLE_NAME
 #
 # This script is designed to be idempotent and safe to run multiple times.
 
@@ -165,11 +174,20 @@ section() {
   echo "== $1"
 }
 
+# paragraph <text>: prints text word-wrapped to the terminal's width, at most
+# 80 columns, so narrow terminals don't re-wrap pre-broken lines mid-sentence.
+paragraph() {
+  local width
+  width="$(tput cols 2>/dev/null || echo 80)"
+  [[ "$width" =~ ^[0-9]+$ && "$width" -le 80 ]] || width=80
+  fold -s -w "$width" <<<"$1" | sed 's/ *$//'
+}
+
 # Prints `<stage>` lines, or `<field>=<value>` lines for one stage's config.
 read_stages_config() {
   (
     cd "$REPO_ROOT"
-    pnpm exec tsx --eval "
+    pnpm --silent exec tsx --eval "
       import('./packages/common/infra-config/src/index.ts').then((m) => {
         const [project, stage] = process.argv.slice(1);
         if (!stage) return console.log(m.listStageNames(project).join('\n'));
@@ -212,7 +230,7 @@ github_cli_ready() {
 }
 
 # SCREAMING_SNAKE_CASE segment used in stage config override variable names,
-# e.g. wattle-development -> WATTLE_DEVELOPMENT. Must match toEnvSegment() in
+# e.g. discava-development -> DISCAVA_DEVELOPMENT. Must match toEnvSegment() in
 # packages/common/infra-config/src/env-overrides.ts.
 to_env_segment() {
   printf '%s' "$1" | sed -E 's/[^a-zA-Z0-9]+/_/g; s/([a-z0-9])([A-Z])/\1_\2/g' | tr '[:lower:]' '[:upper:]'
@@ -254,6 +272,24 @@ common_domain_suffix() {
   local result="" label
   for label in "${common[@]}"; do
     result="${result:+$result.}$label"
+  done
+  echo "$result"
+}
+
+# root_domain_names <comma-separated labels> <root>: prints each label as a
+# subdomain of root, with @ standing for root itself, e.g. @,www and
+# example.com -> example.com,www.example.com.
+root_domain_names() {
+  local root="$2" label result=""
+  local -a labels
+  IFS=',' read -r -a labels <<<"$1"
+  for label in "${labels[@]}"; do
+    if [[ "$label" == @ ]]; then
+      label="$root"
+    else
+      label="$label.$root"
+    fi
+    result="${result:+$result,}$label"
   done
   echo "$result"
 }
@@ -300,8 +336,7 @@ resolve_oidc_subject_prefix() {
   fi
 
   if ! github_cli_ready; then
-    echo "Couldn't read $GITHUB_REPOSITORY's OIDC subject settings (needs an authenticated gh CLI); assuming the default prefix repo:$GITHUB_REPOSITORY." >&2
-    echo "If the repository uses immutable subject claims, set GITHUB_OIDC_SUBJECT_PREFIX instead." >&2
+    paragraph "Couldn't read $GITHUB_REPOSITORY's OIDC subject settings (needs an authenticated gh CLI); assuming the default prefix repo:$GITHUB_REPOSITORY. If the repository uses immutable subject claims, set GITHUB_OIDC_SUBJECT_PREFIX instead." >&2
     echo "repo:$GITHUB_REPOSITORY"
     return
   fi
@@ -312,8 +347,7 @@ resolve_oidc_subject_prefix() {
   local settings use_default prefix
   if ! settings="$(gh api "repos/$GITHUB_REPOSITORY/actions/oidc/customization/sub" \
     --jq '"\(.use_default)\t\(.sub_claim_prefix // "")"')"; then
-    echo "Couldn't read $GITHUB_REPOSITORY's OIDC subject settings from GitHub." >&2
-    echo "Re-run, or set GITHUB_OIDC_SUBJECT_PREFIX to the part of the subject before ':environment:'." >&2
+    paragraph "Couldn't read $GITHUB_REPOSITORY's OIDC subject settings from GitHub. Re-run, or set GITHUB_OIDC_SUBJECT_PREFIX to the part of the subject before ':environment:'." >&2
     return 1
   fi
   IFS=$'\t' read -r use_default prefix <<<"$settings"
@@ -321,8 +355,7 @@ resolve_oidc_subject_prefix() {
   case "$use_default" in
     true) echo "${prefix:-repo:$GITHUB_REPOSITORY}" ;;
     false)
-      echo "$GITHUB_REPOSITORY uses a custom OIDC subject claim template, so its tokens' subject can't be predicted here." >&2
-      echo "Set GITHUB_OIDC_SUBJECT_PREFIX to the part of the subject before ':environment:' and re-run." >&2
+      paragraph "$GITHUB_REPOSITORY uses a custom OIDC subject claim template, so its tokens' subject can't be predicted here. Set GITHUB_OIDC_SUBJECT_PREFIX to the part of the subject before ':environment:' and re-run." >&2
       return 1
       ;;
     *)
@@ -411,7 +444,7 @@ fi
 
 if ! CALLER_ARN="$(aws sts get-caller-identity --query Arn --output text 2>&1)"; then
   echo "$CALLER_ARN" >&2
-  echo "Couldn't authenticate with AWS. Log in first (e.g. \`aws sso login${selected_profile:+ --profile $selected_profile}\` or \`aws configure\`), then re-run." >&2
+  paragraph "Couldn't authenticate with AWS. Log in first (e.g. \`aws sso login${selected_profile:+ --profile $selected_profile}\` or \`aws configure\`), then re-run." >&2
   exit 1
 fi
 readonly CALLER_ARN
@@ -451,6 +484,9 @@ readonly COMPACT_PREFIX="${TARGET_STAGE//-/}"
 # role's IAM permissions (scoped to `role/<stage>-*`) can't modify either role.
 readonly DEPLOY_ROLE_NAME="${DEPLOY_ROLE_NAME:-github-deploy-$TARGET_STAGE}"
 readonly EXECUTION_ROLE_NAME="${EXECUTION_ROLE_NAME:-cfn-execution-$TARGET_STAGE}"
+# One per repository rather than per stage: CI jobs outside any stage's
+# environment (e.g. ci.yml's Trivy scan) pull images too.
+readonly DOCKER_LOGIN_ROLE_NAME="${DOCKER_LOGIN_ROLE_NAME:-github-docker-login-${GITHUB_REPOSITORY#*/}}"
 # Every role the stage's stacks create must carry this boundary (the deploy
 # workflow synthesizes with it applied), which caps what the execution role can
 # grant through them. Must match stagePermissionsBoundaryName() in
@@ -512,18 +548,28 @@ DOMAIN_VARIABLES_TO_DELETE=()
 # Keyed by component name; the domain(s) actually entered below, so the
 # cookie-domain prompt after the loop can default off of them.
 declare -A RESOLVED_DOMAINS=()
-echo "Each component can be served from a custom domain instead of its generated"
-echo "*.execute-api.amazonaws.com / *.cloudfront.net hostname (leave blank for none)."
-echo "API certificates must be in $AWS_REGION; portal and media certificates, served"
-echo "by CloudFront, in $GLOBAL_REGION. DNS records aren't created for you."
+paragraph "Each component can be served from a custom domain instead of its generated *.execute-api.amazonaws.com / *.cloudfront.net hostname (leave blank for none). API certificates must be in $AWS_REGION; portal and media certificates, served by CloudFront, in $GLOBAL_REGION. DNS records aren't created for you."
+echo ""
+paragraph "A root domain suggests a subdomain of it for each component not already configured, e.g. core-api.example.com for example.com."
+root_domain_variable="${STAGE_ENV_PREFIX}ROOT_DOMAIN"
+while true; do
+  ask_optional ROOT_DOMAIN "Root domain" "${!root_domain_variable:-}"
+  ROOT_DOMAIN="${ROOT_DOMAIN// /}"
+  ROOT_DOMAIN="${ROOT_DOMAIN,,}"
+  [[ -n "$ROOT_DOMAIN" && ! "$ROOT_DOMAIN" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]] || break
+  echo "Not a valid domain name: $ROOT_DOMAIN" >&2
+  [[ "$ASSUME_YES" == false ]] || exit 1
+done
+readonly ROOT_DOMAIN
+# component|env segment|label|kind|subdomain labels under the root domain
 for spec in \
-  "coreApi|CORE_API|Core API|api" \
-  "instructorApi|INSTRUCTOR_API|Instructor API|api" \
-  "studentPortal|STUDENT_PORTAL|Student portal|cloudfront" \
-  "instructorPortal|INSTRUCTOR_PORTAL|Instructor portal|cloudfront" \
-  "adminPortal|ADMIN_PORTAL|Admin portal|cloudfront" \
-  "lessonMedia|LESSON_MEDIA|Lesson media|cloudfront"; do
-  IFS='|' read -r component segment label kind <<<"$spec"
+  "coreApi|CORE_API|Core API|api|core-api" \
+  "instructorApi|INSTRUCTOR_API|Instructor API|api|instructor-api" \
+  "studentPortal|STUDENT_PORTAL|Student portal|cloudfront|@,www" \
+  "instructorPortal|INSTRUCTOR_PORTAL|Instructor portal|cloudfront|instructor" \
+  "adminPortal|ADMIN_PORTAL|Admin portal|cloudfront|admin" \
+  "lessonMedia|LESSON_MEDIA|Lesson media|cloudfront|lesson-media"; do
+  IFS='|' read -r component segment label kind root_labels <<<"$spec"
   if [[ "$kind" == api ]]; then
     # API Gateway custom domains take a single name.
     domain_variable="$STAGE_ENV_PREFIX${segment}_DOMAIN_NAME"
@@ -546,8 +592,11 @@ for spec in \
     current_certificate="$(github_environment_variable "$certificate_variable")"
   fi
 
+  root_domains=""
+  [[ -z "$ROOT_DOMAIN" ]] || root_domains="$(root_domain_names "$root_labels" "$ROOT_DOMAIN")"
+
   while true; do
-    ask_optional domains "$domain_question" "${STAGE_DOMAINS[$component]:-$current_domains}"
+    ask_optional domains "$domain_question" "${STAGE_DOMAINS[$component]:-${current_domains:-$root_domains}}"
     domains="${domains// /}"
     domains="${domains,,}"
     domain_error=""
@@ -637,10 +686,7 @@ if [[ -n "${RESOLVED_DOMAINS[lessonMedia]:-}" ]]; then
   fi
 
   echo ""
-  echo "HLS playback needs a domain shared by Instructor API and Lesson media"
-  echo "(e.g. example.com for instructor-api.example.com and"
-  echo "lesson-media.example.com) -- a cookie can only be set for the issuing"
-  echo "domain or one of its parents."
+  paragraph "HLS playback needs a domain shared by Instructor API and Lesson media (e.g. example.com for instructor-api.example.com and lesson-media.example.com) -- a cookie can only be set for the issuing domain or one of its parents."
   while true; do
     ask_optional cookie_domain "Shared cookie domain for HLS playback" "$cookie_domain_default"
     cookie_domain="${cookie_domain,,}"
@@ -665,7 +711,9 @@ cleanup() {
     "${DEPLOY_POLICY_FILE:-}" \
     "${EXECUTION_TRUST_POLICY_FILE:-}" \
     "${EXECUTION_POLICY_FILE:-}" \
-    "${BOUNDARY_POLICY_FILE:-}"
+    "${BOUNDARY_POLICY_FILE:-}" \
+    "${DOCKER_LOGIN_TRUST_POLICY_FILE:-}" \
+    "${DOCKER_LOGIN_POLICY_FILE:-}"
 }
 
 trap cleanup EXIT
@@ -683,6 +731,7 @@ confirm() {
   echo "  - Deploy role:   $DEPLOY_ROLE_NAME"
   echo "  - Exec role:     $EXECUTION_ROLE_NAME"
   echo "  - Boundary:      $BOUNDARY_POLICY_NAME"
+  echo "  - Docker login:  $DOCKER_LOGIN_ROLE_NAME (shared by every stage)"
   if [[ ${#BOOTSTRAP_REGIONS[@]} -gt 0 ]]; then
     echo "  - CDK bootstrap: ${BOOTSTRAP_REGIONS[*]}"
   fi
@@ -693,6 +742,7 @@ confirm() {
     echo "  - GitHub var:    AUTO_DEPLOY_STAGE=$TARGET_STAGE"
   fi
   if [[ "$CONFIGURE_GITHUB" == true ]]; then
+    echo "  - GitHub var:    AWS_DOCKER_LOGIN_ROLE_ARN (repository)"
     local variable
     for variable in "${DOMAIN_VARIABLES[@]}"; do
       echo "  - GitHub var:    $variable"
@@ -769,7 +819,7 @@ EOF
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "CloudFormationDeployWattle",
+      "Sid": "CloudFormationDeployDiscava",
       "Effect": "Allow",
       "Action": [
         "cloudformation:CreateStack",
@@ -849,10 +899,16 @@ EOF
 EOF
 }
 
+# upsert_role <name> <trust policy file> <description> [stage tag]: the stage
+# tag defaults to the target stage; pass an empty one for a role every stage
+# shares.
 upsert_role() {
   local role_name="$1"
   local trust_policy_file="$2"
   local description="$3"
+  local stage="${4-$TARGET_STAGE}"
+  local -a tags=(Key=Project,Value=discava Key=ManagedBy,Value=setup-stage.sh)
+  [[ -z "$stage" ]] || tags+=(Key=Stage,Value="$stage")
 
   if aws iam get-role --role-name "$role_name" >/dev/null 2>&1; then
     echo "Updating trust policy for role: $role_name"
@@ -865,10 +921,7 @@ upsert_role() {
       --role-name "$role_name" \
       --assume-role-policy-document "file://$trust_policy_file" \
       --description "$description" \
-      --tags \
-        Key=Project,Value=wattle-lms \
-        Key=ManagedBy,Value=setup-stage.sh \
-        Key=Stage,Value="$TARGET_STAGE" >/dev/null
+      --tags "${tags[@]}" >/dev/null
   fi
 }
 
@@ -876,12 +929,82 @@ attach_inline_policy() {
   echo "Attaching deploy permissions to: $DEPLOY_ROLE_NAME"
   aws iam put-role-policy \
     --role-name "$DEPLOY_ROLE_NAME" \
-    --policy-name WattleGitHubDeployPermissions \
+    --policy-name DiscavaGitHubDeployPermissions \
     --policy-document "file://$DEPLOY_POLICY_FILE"
+}
+
+create_docker_login_policy_files() {
+  DOCKER_LOGIN_TRUST_POLICY_FILE="$(mktemp -t "${DOCKER_LOGIN_ROLE_NAME}.trust.XXXXXX.json")"
+  DOCKER_LOGIN_POLICY_FILE="$(mktemp -t "${DOCKER_LOGIN_ROLE_NAME}.policy.XXXXXX.json")"
+
+  # Any workflow in the repository may assume it: all it grants is a pull
+  # token for public images.
+  cat >"$DOCKER_LOGIN_TRUST_POLICY_FILE" <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:$AWS_PARTITION:iam::$ACCOUNT_ID:oidc-provider/$OIDC_PROVIDER_HOST"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "$OIDC_PROVIDER_HOST:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "$OIDC_PROVIDER_HOST:sub": "$OIDC_SUBJECT_PREFIX:*"
+        }
+      }
+    }
+  ]
+}
+EOF
+
+  # Neither action supports resource-level permissions. GetAuthorizationToken
+  # gets its bearer token through sts:GetServiceBearerToken, granted without
+  # conditions as in AWS's AmazonElasticContainerRegistryPublicReadOnly: an
+  # sts:AWSServiceName condition doesn't match the request ECR Public makes.
+  cat >"$DOCKER_LOGIN_POLICY_FILE" <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EcrPublicAuthorizationToken",
+      "Effect": "Allow",
+      "Action": "ecr-public:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "EcrPublicBearerToken",
+      "Effect": "Allow",
+      "Action": "sts:GetServiceBearerToken",
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+}
+
+attach_docker_login_policy() {
+  echo "Attaching Docker login permissions to: $DOCKER_LOGIN_ROLE_NAME"
+  aws iam put-role-policy \
+    --role-name "$DOCKER_LOGIN_ROLE_NAME" \
+    --policy-name DiscavaDockerLoginPermissions \
+    --policy-document "file://$DOCKER_LOGIN_POLICY_FILE"
 }
 
 attach_execution_policy() {
   EXECUTION_POLICY_FILE="$(mktemp -t "${EXECUTION_ROLE_NAME}.policy.XXXXXX.json")"
+
+  # SchedulesInScheduleGroups: deleting a schedule group first deletes every
+  # schedule left in it, which is authorized per schedule, not by the group.
+  #
+  # MediaConvertTagOnCreate: tagging a job template as it's created (stack tags
+  # propagate to it) is authorized against jobTemplates/*, not the template's
+  # own ARN, so it can't be scoped to COMPACT_PREFIX like the other job
+  # template actions.
 
   cat >"$EXECUTION_POLICY_FILE" <<EOF
 {
@@ -902,7 +1025,7 @@ attach_execution_policy() {
       ]
     },
     {
-      "Sid": "S3BucketsForWattle",
+      "Sid": "S3BucketsForDiscava",
       "Effect": "Allow",
       "Action": [
         "s3:CreateBucket",
@@ -922,14 +1045,15 @@ attach_execution_policy() {
         "s3:PutBucketCORS",
         "s3:PutBucketLogging",
         "s3:DeleteBucketPolicy",
-        "s3:PutBucketAcl"
+        "s3:PutBucketAcl",
+        "s3:AllowVendedLogDeliveryForResource"
       ],
       "Resource": [
         "arn:$AWS_PARTITION:s3:::$BUCKET_PREFIX*"
       ]
     },
     {
-      "Sid": "S3ObjectsForWattle",
+      "Sid": "S3ObjectsForDiscava",
       "Effect": "Allow",
       "Action": [
         "s3:GetObject",
@@ -956,7 +1080,7 @@ attach_execution_policy() {
       ]
     },
     {
-      "Sid": "LambdaForWattle",
+      "Sid": "LambdaForDiscava",
       "Effect": "Allow",
       "Action": [
         "lambda:CreateFunction",
@@ -989,7 +1113,7 @@ attach_execution_policy() {
       ]
     },
     {
-      "Sid": "DynamoDbForWattle",
+      "Sid": "DynamoDbForDiscava",
       "Effect": "Allow",
       "Action": [
         "dynamodb:CreateTable",
@@ -1013,7 +1137,7 @@ attach_execution_policy() {
       ]
     },
     {
-      "Sid": "KmsKeysForWattle",
+      "Sid": "KmsKeysForDiscava",
       "Effect": "Allow",
       "Action": [
         "kms:CreateKey",
@@ -1035,7 +1159,7 @@ attach_execution_policy() {
       "Resource": "*"
     },
     {
-      "Sid": "CloudWatchLogsForWattle",
+      "Sid": "CloudWatchLogsForDiscava",
       "Effect": "Allow",
       "Action": [
         "logs:CreateLogGroup",
@@ -1054,7 +1178,7 @@ attach_execution_policy() {
       "Resource": "*"
     },
     {
-      "Sid": "CloudFrontForWattle",
+      "Sid": "CloudFrontForDiscava",
       "Effect": "Allow",
       "Action": [
         "cloudfront:CreateDistribution",
@@ -1077,7 +1201,7 @@ attach_execution_policy() {
       "Resource": "*"
     },
     {
-      "Sid": "ApiGatewayForWattle",
+      "Sid": "ApiGatewayForDiscava",
       "Effect": "Allow",
       "Action": [
         "apigateway:POST",
@@ -1091,7 +1215,7 @@ attach_execution_policy() {
       "Resource": "*"
     },
     {
-      "Sid": "WafV2ForWattle",
+      "Sid": "WafV2ForDiscava",
       "Effect": "Allow",
       "Action": [
         "wafv2:CreateWebACL",
@@ -1112,7 +1236,7 @@ attach_execution_policy() {
       "Resource": "*"
     },
     {
-      "Sid": "EventBridgeRulesForWattle",
+      "Sid": "EventBridgeRulesForDiscava",
       "Effect": "Allow",
       "Action": [
         "events:PutRule",
@@ -1129,7 +1253,7 @@ attach_execution_policy() {
       ]
     },
     {
-      "Sid": "SchedulerGroupsForWattle",
+      "Sid": "SchedulerGroupsForDiscava",
       "Effect": "Allow",
       "Action": [
         "scheduler:CreateScheduleGroup",
@@ -1144,6 +1268,12 @@ attach_execution_policy() {
       ]
     },
     {
+      "Sid": "SchedulesInScheduleGroups",
+      "Effect": "Allow",
+      "Action": "scheduler:DeleteSchedule",
+      "Resource": "arn:$AWS_PARTITION:scheduler:$AWS_REGION:$ACCOUNT_ID:schedule/$COMPACT_PREFIX*/*"
+    },
+    {
       "Sid": "MediaConvertAccountLevel",
       "Effect": "Allow",
       "Action": [
@@ -1153,7 +1283,13 @@ attach_execution_policy() {
       "Resource": "*"
     },
     {
-      "Sid": "MediaConvertJobTemplatesForWattle",
+      "Sid": "MediaConvertTagOnCreate",
+      "Effect": "Allow",
+      "Action": "mediaconvert:TagResource",
+      "Resource": "arn:$AWS_PARTITION:mediaconvert:$AWS_REGION:$ACCOUNT_ID:jobTemplates/*"
+    },
+    {
+      "Sid": "MediaConvertJobTemplatesForDiscava",
       "Effect": "Allow",
       "Action": [
         "mediaconvert:GetJobTemplate",
@@ -1168,7 +1304,7 @@ attach_execution_policy() {
       ]
     },
     {
-      "Sid": "AppConfigForWattle",
+      "Sid": "AppConfigForDiscava",
       "Effect": "Allow",
       "Action": [
         "appconfig:CreateApplication",
@@ -1200,7 +1336,7 @@ attach_execution_policy() {
       "Resource": "arn:$AWS_PARTITION:appconfig:$AWS_REGION:$ACCOUNT_ID:*"
     },
     {
-      "Sid": "ManageWattleRoles",
+      "Sid": "ManageDiscavaRoles",
       "Effect": "Allow",
       "Action": [
         "iam:DeleteRole",
@@ -1287,7 +1423,7 @@ attach_execution_policy() {
       "Resource": "*"
     },
     {
-      "Sid": "PassOnlyWattleRolesToServices",
+      "Sid": "PassOnlyDiscavaRolesToServices",
       "Effect": "Allow",
       "Action": "iam:PassRole",
       "Resource": [
@@ -1301,7 +1437,7 @@ EOF
   echo "Attaching execution policy to: $EXECUTION_ROLE_NAME"
   aws iam put-role-policy \
     --role-name "$EXECUTION_ROLE_NAME" \
-    --policy-name WattleCloudFormationExecutionPolicy \
+    --policy-name DiscavaCloudFormationExecutionPolicy \
     --policy-document "file://$EXECUTION_POLICY_FILE"
 }
 
@@ -1506,7 +1642,7 @@ EOF
       --policy-document "file://$BOUNDARY_POLICY_FILE" \
       --description "Permissions boundary for $TARGET_STAGE's IAM roles" \
       --tags \
-        Key=Project,Value=wattle-lms \
+        Key=Project,Value=discava \
         Key=ManagedBy,Value=setup-stage.sh \
         Key=Stage,Value="$TARGET_STAGE" >/dev/null
   fi
@@ -1537,6 +1673,7 @@ configure_github_environment() {
   if [[ "$SET_AUTO_DEPLOY" == true ]]; then
     gh variable set AUTO_DEPLOY_STAGE --repo "$GITHUB_REPOSITORY" --body "$TARGET_STAGE"
   fi
+  gh variable set AWS_DOCKER_LOGIN_ROLE_ARN --repo "$GITHUB_REPOSITORY" --body "$DOCKER_LOGIN_ROLE_ARN"
 
   local variable
   for variable in "${DOMAIN_VARIABLES[@]}"; do
@@ -1562,18 +1699,16 @@ print_next_steps() {
     for variable in "${DOMAIN_VARIABLES_TO_DELETE[@]}"; do
       echo "  Remove:     $variable"
     done
-    echo "To deploy it automatically whenever CI passes on main, also set the"
-    echo "repository variable AUTO_DEPLOY_STAGE=$TARGET_STAGE."
+    echo "and the repository variable:"
+    echo "  Variable:   AWS_DOCKER_LOGIN_ROLE_ARN=$DOCKER_LOGIN_ROLE_ARN"
+    paragraph "To deploy it automatically whenever CI passes on main, also set the repository variable AUTO_DEPLOY_STAGE=$TARGET_STAGE."
     echo ""
   fi
   if [[ ${#DOMAIN_VARIABLES[@]} -gt 0 ]]; then
-    echo "After the next deploy, point each custom domain's DNS record at its API"
-    echo "Gateway custom domain or CloudFront distribution; until then the domains"
-    echo "won't resolve, although the portals and signed media URLs already use them."
+    paragraph "After the next deploy, point each custom domain's DNS record at its API Gateway custom domain or CloudFront distribution; until then the domains won't resolve, although the portals and signed media URLs already use them."
     echo ""
   fi
-  echo "Anyone who can run workflows can deploy this stage. For production-like"
-  echo "stages, add required reviewers and restrict deployments to main at:"
+  paragraph "Anyone who can run workflows can deploy this stage. For production-like stages, add required reviewers and restrict deployments to main at:"
   echo "  https://github.com/$GITHUB_REPOSITORY/settings/environments"
   echo ""
   echo "Deploy from the Actions tab (Deploy > Run workflow), or:"
@@ -1582,6 +1717,7 @@ print_next_steps() {
 
 readonly DEPLOY_ROLE_ARN="arn:$AWS_PARTITION:iam::$ACCOUNT_ID:role/$DEPLOY_ROLE_NAME"
 readonly EXECUTION_ROLE_ARN="arn:$AWS_PARTITION:iam::$ACCOUNT_ID:role/$EXECUTION_ROLE_NAME"
+readonly DOCKER_LOGIN_ROLE_ARN="arn:$AWS_PARTITION:iam::$ACCOUNT_ID:role/$DOCKER_LOGIN_ROLE_NAME"
 
 confirm
 bootstrap_cdk
@@ -1598,6 +1734,13 @@ upsert_role \
   "$EXECUTION_TRUST_POLICY_FILE" \
   "CloudFormation execution role for $GITHUB_REPOSITORY ($TARGET_STAGE)"
 attach_execution_policy
+create_docker_login_policy_files
+upsert_role \
+  "$DOCKER_LOGIN_ROLE_NAME" \
+  "$DOCKER_LOGIN_TRUST_POLICY_FILE" \
+  "GitHub Actions ECR Public login role for $GITHUB_REPOSITORY" \
+  ""
+attach_docker_login_policy
 if [[ "$CONFIGURE_GITHUB" == true ]]; then
   configure_github_environment
 fi

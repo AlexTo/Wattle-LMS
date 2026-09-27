@@ -1,13 +1,13 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { listStageNames, resolveStage } from './resolve-stage.js';
 
 const PROJECT_PATH = 'packages/infra';
-const STAGE = 'wattle-development';
-const ENV_KEY = 'WATTLE_DEVELOPMENT_STUDENT_PORTAL_DOMAIN_NAMES';
+const STAGE = 'discava-development';
+const ENV_KEY = 'DISCAVA_DEVELOPMENT_STUDENT_PORTAL_DOMAIN_NAMES';
 
 afterEach(() => {
   delete process.env[ENV_KEY];
@@ -16,7 +16,7 @@ afterEach(() => {
 describe('resolveStage', () => {
   it('lists the configured stage names for the infra project', () => {
     expect(listStageNames(PROJECT_PATH)).toEqual(
-      expect.arrayContaining([STAGE, 'wattle-production']),
+      expect.arrayContaining([STAGE, 'discava-production']),
     );
   });
 

@@ -1,16 +1,15 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { useQuery } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
+
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@wattle/common-shadcn/components/ui/card';
+} from '@discava/common-shadcn/components/ui/card';
 import {
   type ChartConfig,
   ChartContainer,
@@ -18,7 +17,9 @@ import {
   ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
-} from '@wattle/common-shadcn/components/ui/chart';
+} from '@discava/common-shadcn/components/ui/chart';
+import { useQuery } from '@tanstack/react-query';
+import { createFileRoute } from '@tanstack/react-router';
 import {
   AlertTriangle,
   BarChart3,

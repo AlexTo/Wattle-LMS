@@ -1,5 +1,5 @@
 {
-  "name": "@wattle/instructor-api",
+  "name": "@discava/instructor-api",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -25,7 +25,7 @@
     "tslib": "^2.3.0",
     "uuid": "catalog:",
     "zod": "catalog:",
-    "@wattle/core-table": "workspace:*"
+    "@discava/core-table": "workspace:*"
   },
   "devDependencies": {
     "@types/aws-lambda": "catalog:",

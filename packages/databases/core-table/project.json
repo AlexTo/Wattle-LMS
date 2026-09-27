@@ -1,5 +1,5 @@
 {
-  "name": "@wattle/core-table",
+  "name": "@discava/core-table",
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/databases/core-table/src",
   "projectType": "library",
@@ -58,7 +58,7 @@
       "dependsOn": [
         "format",
         {
-          "projects": ["@wattle/source"],
+          "projects": ["@discava/source"],
           "target": "license-check"
         }
       ],

@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import { defineConfig } from 'vitest/config';
@@ -9,7 +9,7 @@ export default defineConfig(() => ({
   cacheDir: '../../node_modules/.vite/packages/infra',
   test: {
     passWithNoTests: true,
-    name: '@wattle/infra',
+    name: '@discava/infra',
     watch: false,
     globals: true,
     environment: 'jsdom',

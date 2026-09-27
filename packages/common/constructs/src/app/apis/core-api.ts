@@ -1,8 +1,8 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { AppRouter, appRouter } from '@wattle/core-api';
+import { AppRouter, appRouter } from '@discava/core-api';
 import { Aspects, Duration } from 'aws-cdk-lib';
 import {
   AuthorizationType,

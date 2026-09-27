@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import type { APIGatewayProxyEvent } from 'aws-lambda';
@@ -28,7 +28,7 @@ const {
   contentItemPatchSet: vi.fn(),
 }));
 
-vi.mock('@wattle/core-table', () => ({
+vi.mock('@discava/core-table', () => ({
   createCoreTableService: vi.fn(async () => ({
     entities: {
       courseInstructor: {

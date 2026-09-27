@@ -1,5 +1,5 @@
 {
-  "name": "@wattle/core-api",
+  "name": "@discava/core-api",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
     "@aws-sdk/credential-providers": "catalog:",
     "@trpc/client": "catalog:",
     "@trpc/server": "catalog:",
-    "@wattle/core-table": "workspace:*",
+    "@discava/core-table": "workspace:*",
     "aws-xray-sdk-core": "catalog:",
     "aws4fetch": "catalog:",
     "electrodb": "catalog:",

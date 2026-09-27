@@ -1,5 +1,5 @@
 /**
- * Copyright Wattle LMS Contributors. All Rights Reserved.
+ * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -21,7 +21,7 @@ const {
   scheduleTranscodeCleanupOrThrow: vi.fn(),
 }));
 
-vi.mock('@wattle/core-table', () => ({
+vi.mock('@discava/core-table', () => ({
   createCoreTableService: vi.fn(async () => ({
     entities: {
       contentItem: {
