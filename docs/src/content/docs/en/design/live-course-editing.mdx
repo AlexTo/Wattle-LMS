@@ -1,0 +1,111 @@
+---
+title: Live course editing
+description: What happens when instructors add, remove, hide, restore or edit modules, lessons and content items in a published course.
+sidebar:
+  order: 1
+---
+
+import Link from '@components/link.astro';
+
+Instructors keep editing a course after it's published. This design makes those edits safe for students who are already enrolled: nothing half-built becomes visible, nothing a student has done is lost, and progress stays correct.
+
+In a draft course every change applies immediately and delete is a hard delete. Everything below applies to courses with `status: 'published'`.
+
+## Data model
+
+Attributes on the `curriculum` entities that support live editing:
+
+| Attribute | On | Purpose |
+|---|---|---|
+| `visibility: 'hidden' \| 'visible'` | Modules, lessons, content items | Required. Create procedures set `visible` in draft courses and `hidden` in published ones, so a new quiz, lesson or module is never seen half-built. The instructor clicks **Publish** to show it |
+| `archivedAt` | Modules, lessons, content items | Soft delete. Set only on the archived record itself; its children are hidden because their parent is archived, not by being archived themselves |
+| `studentActivityCount` | Content items | Number of distinct students with any data for the item. Incremented (`ADD 1`) in the same transaction that creates a student's **first** record for the item: the per-user quiz summary for a quiz, the `itemCompletion` for video or text. Never decremented |
+
+`studentActivityCount` lives in the curriculum partition, so summing or checking it for everything under a module or lesson is one query. The student-side records it counts are keyed by user and can't answer "who used this item?" without a scan.
+
+## Effective visibility
+
+A record is shown to students only if it and every ancestor are `visible` and not archived. This is checked on:
+
+- every student read: `viewCourse`, `publicViewCourse`, `quiz.view`;
+- every student write: quiz submission, marking an item complete;
+- every progress calculation.
+
+So hiding or archiving a module also stops a quiz inside it being submitted, and removes its items from everyone's progress.
+
+## Actions in a published course
+
+| Action | What students see | Their data and progress | Progress recalculated for |
+|---|---|---|---|
+| **Add module** | Nothing until published. Publishing also publishes its hidden lessons and items, so it appears all at once | Once published, `progressPercent` drops for everyone. Completed lessons and courses stay completed | All enrolled students, on publish |
+| **Remove module** | Archived: gone from the outline on next load. A student on one of its pages gets "This lesson has been removed by your instructor" | Kept (completions, attempts, best scores), no longer counted. A student who had finished everything else becomes `completed`. Restorable, and then it all counts again | All enrolled students |
+| **Edit module** (title, description, order) | Applies immediately | No effect | No one |
+| **Add lesson** | Nothing until published (together with its hidden items) | As for adding a module | All enrolled students, on publish |
+| **Remove lesson** | As for removing a module | As for removing a module | All enrolled students |
+| **Edit lesson** (title, description, order) | Applies immediately | No effect | No one |
+| **Add content item** | Nothing until published, and only once its lesson and module are published too | Once published, `progressPercent` drops. If its lesson was already completed, the lesson stays completed and the item shows as **New** | All enrolled students, on publish |
+| **Remove content item** | Archived: disappears on next load. Submitting a quiz in it or marking it complete is rejected with "no longer available" | Kept, not counted. If it was a student's only unfinished item, the lesson (and possibly the course) becomes completed. Restorable | All enrolled students |
+| **Edit content item**: title, description, text body | Applies immediately | Completion kept | No one |
+| **Edit content item**: replace video | The video replace/re-transcode flow. What students see while it re-transcodes is an open question (below) | Completion kept | No one |
+| **Edit content item**: quiz | See <Link path="design/quizzes">Quizzes</Link>: answer-key-only edits are invisible; question edits make an in-progress submit return `CONFLICT` | Attempts, best scores and passes kept, never regraded | No one |
+| **Hide** (any level) | Disappears like a removal, but isn't in the Archived view | Kept, not counted; counts again when shown | All enrolled students |
+| **Reorder** (any level) | Applies immediately | No effect | No one |
+
+"Progress recalculated" is done by the server-side Lambda described in <Link path="design/progress-and-completion">Progress and completion</Link>, never by the student's browser.
+
+## Publishing
+
+Publishing a module or lesson sets it and all of its hidden descendants to `visible` in **one transaction**, so students see a new lesson with all its items at once rather than piece by piece. Items the instructor wants kept back can be hidden individually afterwards.
+
+## Removing (archiving)
+
+In a published course, delete always archives, and the instructor portal labels the action **Archive** rather than **Delete**. The confirmation dialog shows the impact from `studentActivityCount`:
+
+- a content item: "12 students have attempted this quiz. Their results will be kept."
+- a module or lesson: the sum over the items underneath, worded "about N students", since a student active in several items is counted once per item. An exact count would need an extra per-student-per-lesson record, which isn't worth it for a warning.
+
+### Removed while a student is learning it
+
+| Where the student is | What happens |
+|---|---|
+| Elsewhere in the course | The module or lesson is gone from the outline the next time it loads |
+| On that lesson's page | Content already on screen stays readable. The next data refetch (navigation, window focus) shows **"This lesson has been removed by your instructor"** with a link back to the outline, never a bare 404 |
+| Partway through a quiz in it | Submit is rejected ("This quiz is no longer available"); local draft discarded; no attempt used |
+| Marking an item complete | Rejected the same way |
+| Old link or bookmark | The same "removed" page |
+
+The archive triggers a progress recalculation for every enrolled student, so the removed content stops counting straight away, without anyone reloading.
+
+## Restoring
+
+The instructor course page has an **Archived** section, grouped by module and lesson, with **Restore** on every row.
+
+- Restoring clears `archivedAt` and returns the record to its original `order`.
+- A content item can only be restored if its lesson and module are active. Otherwise the view says "Restore the lesson first", or offers to restore the parents too.
+- A restored quiz keeps its version, attempts and best scores.
+- Restoring triggers a progress recalculation, and everything counts again as before.
+
+## Permanent delete
+
+Offered only from the Archived view, and only when `studentActivityCount` is 0 for the item, or for every item under a lesson or module. Anything a student has used can be archived but never permanently deleted.
+
+## Out of scope
+
+**Moving a lesson to another module.** If it's added, note that lesson and content item sort keys contain `moduleId`, so a move means re-creating the lesson and its items under the new module in one transaction, **keeping the same ids** so `progress`, `itemCompletion` and `quizAttempt` still match.
+
+## Decisions
+
+| Decision | Why |
+|---|---|
+| Edits stay allowed on published courses | Blocking them is too restrictive; full versioning of the whole course (draft copy + publish) is too heavy for the problem |
+| Modules, lessons and items all have `visibility`, and new ones start hidden | Visibility only on items would expose empty lessons and modules while they're being built |
+| New content needs an explicit **Publish**; it never appears automatically | Showing a lesson as soon as its first item is visible would expose it half-built |
+| Publishing a parent cascades to hidden children in one transaction | A new lesson appears complete, all at once |
+| Delete in a published course always archives, and archives are restorable | Students' results must survive a mistaken delete; instructors need an undo |
+| `archivedAt` only on the archived record, not cascaded | Avoids DynamoDB's 100-item transaction limit, and a restore brings back exactly what was there |
+| Permanent delete only when no student has used the item | Student data is never destroyed by curriculum edits |
+| `studentActivityCount` counter rather than a boolean | Powers the impact warning as well as the permanent-delete guard |
+
+## Open questions
+
+- What students see while a replaced video re-transcodes. Recommended: keep playing the previous rendition until the new one is ready, rather than showing "processing".

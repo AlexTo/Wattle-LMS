@@ -1,0 +1,28 @@
+---
+title: Design overview
+description: How Wattle LMS feature designs are documented, and the shared concepts they rely on.
+sidebar:
+  order: 0
+---
+
+import Link from '@components/link.astro';
+
+This section records **how features are designed and why**, for developers working on Wattle LMS.
+
+Each page covers one feature area and ends with the decisions made and their rationale.
+
+## Pages
+
+| Page | Covers |
+|---|---|
+| <Link path="design/live-course-editing">Live course editing</Link> | Adding, removing, hiding, restoring and editing modules, lessons and content items after a course is published |
+| <Link path="design/progress-and-completion">Progress and completion</Link> | How item, lesson and course completion are recorded, and the server-side recalculation that owns them |
+| <Link path="design/quizzes">Quizzes</Link> | The quiz content item: data model, grading, attempts, and the student and instructor experience |
+
+## Shared concepts
+
+**Curriculum hierarchy.** A course contains modules, a module contains lessons, and a lesson contains an ordered list of content items (video, text, quiz). All four live in one DynamoDB partition (`COURSE#<courseId>`) through ElectroDB's `curriculum` collection, so a whole course is one query.
+
+**Effective visibility.** A module, lesson or content item is shown to students only if it **and every ancestor** is `visible` and not archived. Student reads, student writes and progress calculations all use effective visibility, never a record's own `visibility` alone.
+
+**Student data is keyed by user.** `progress`, `itemCompletion` and `quizAttempt` use `userId` as their partition key, so "a student's progress in a course" is one query. The flip side is that "which students touched this item?" can't be answered without a scan, which is why content items carry a `studentActivityCount`.
