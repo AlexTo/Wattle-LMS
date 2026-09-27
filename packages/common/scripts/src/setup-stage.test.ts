@@ -300,19 +300,20 @@ describe('setup-stage.sh Docker login role', { timeout: 60_000 }, () => {
 
     expect(status).toBe(0);
     expect(policyDocument(`${ROLE_NAME}.policy.json`).Statement).toEqual([
-      expect.objectContaining({
+      {
+        Sid: 'EcrPublicAuthorizationToken',
         Effect: 'Allow',
         Action: 'ecr-public:GetAuthorizationToken',
         Resource: '*',
-      }),
-      expect.objectContaining({
+      },
+      // Unconditioned: GetAuthorizationToken fails with AccessDenied on
+      // GetServiceBearerToken under an sts:AWSServiceName condition.
+      {
+        Sid: 'EcrPublicBearerToken',
         Effect: 'Allow',
         Action: 'sts:GetServiceBearerToken',
         Resource: '*',
-        Condition: {
-          StringEquals: { 'sts:AWSServiceName': 'ecr-public.amazonaws.com' },
-        },
-      }),
+      },
     ]);
   });
 

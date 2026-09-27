@@ -962,9 +962,10 @@ create_docker_login_policy_files() {
 }
 EOF
 
-  # Neither action supports resource-level permissions. The bearer token is
-  # restricted to ECR Public in its own statement, since that condition key is
-  # absent from (and would so deny) GetAuthorizationToken requests.
+  # Neither action supports resource-level permissions. GetAuthorizationToken
+  # gets its bearer token through sts:GetServiceBearerToken, granted without
+  # conditions as in AWS's AmazonElasticContainerRegistryPublicReadOnly: an
+  # sts:AWSServiceName condition doesn't match the request ECR Public makes.
   cat >"$DOCKER_LOGIN_POLICY_FILE" <<EOF
 {
   "Version": "2012-10-17",
@@ -979,12 +980,7 @@ EOF
       "Sid": "EcrPublicBearerToken",
       "Effect": "Allow",
       "Action": "sts:GetServiceBearerToken",
-      "Resource": "*",
-      "Condition": {
-        "StringEquals": {
-          "sts:AWSServiceName": "ecr-public.amazonaws.com"
-        }
-      }
+      "Resource": "*"
     }
   ]
 }
