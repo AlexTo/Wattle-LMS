@@ -58,8 +58,8 @@ export default defineConfig({
       },
       sidebar: [
         {
-          label: 'Getting started',
-          items: [{ slug: 'guides/getting-started' }],
+          label: 'Design',
+          items: [{ autogenerate: { directory: 'design' } }],
         },
       ],
       customCss: ['./src/styles/custom.css'],

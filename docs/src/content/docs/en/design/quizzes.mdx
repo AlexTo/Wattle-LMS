@@ -1,0 +1,158 @@
+---
+title: Quizzes
+description: The quiz content item — data model, grading, attempts, edits mid-attempt, and the student and instructor experience.
+sidebar:
+  order: 3
+---
+
+import Link from '@components/link.astro';
+
+A quiz is a content item (`type: 'quiz'`) placed in a lesson's sequence alongside video and text. It has one or more questions, each **single choice** or **multiple choice**.
+
+## Data model
+
+### Quiz content item
+
+Quiz-specific `contentItem` attributes. As with video and text, which attributes a type requires is enforced by the zod schemas, not by ElectroDB.
+
+| Attribute | Shape |
+|---|---|
+| `questions` | `[{ questionId, kind: 'single' \| 'multiple', prompt, options: [{ optionId, text }] }]`. `prompt` is Tiptap JSON. Safe to send to students |
+| `answerKey` | `{ [questionId]: { correctOptionIds: string[], explanation? } }`. `explanation` is Tiptap JSON. **Never read by core-api except when grading** |
+| `settings` | `{ passMarkPercent, attemptsAllowed /* null = unlimited */, shuffleOptions, revealAnswers: 'after_each_attempt' \| 'after_final_attempt' \| 'never' }` |
+| `quizVersion` | Number, incremented on every save |
+| `questionsHash` | Hash of `questions` only (not `settings`), recomputed on every save |
+
+`questions` and `answerKey` are separate attributes so that passing a content item through to students can't leak the answers.
+
+### `quizAttempt`
+
+- pk `userId`, sk `courseId / contentItemId / attemptId`.
+- Holds `answers` (`{ [questionId]: optionId[] }`), `scorePercent`, `passed`, `quizVersion`, `questionsHash`, `submittedAt`.
+
+### Per-user quiz summary
+
+- Holds `attemptsUsed`, `bestScore`, `bestAttemptId`, `passedAt`.
+- Written in the same transaction as each attempt, conditioned on `attemptsUsed < attemptsAllowed`, so the attempt limit holds even when two submissions race.
+- `bestScore` only increases. `passedAt` is set by the first passing attempt and never cleared.
+- Creating a student's summary increments the quiz's `studentActivityCount` (see <Link path="design/live-course-editing">Live course editing</Link>).
+
+## Grading
+
+- Server-side only, in core-api. The client never receives `answerKey` before submitting.
+- Each question is all-or-nothing: the selected options must exactly equal `correctOptionIds`.
+- Score is the percentage of questions correct; `passed` is `score >= passMarkPercent`.
+- The **best** score across all attempts, and across quiz versions, is the one that counts.
+- A recorded pass is permanent, even if the pass mark is later raised or the quiz is edited.
+- Past attempts are never regraded automatically.
+
+## Quiz edited mid-attempt
+
+With each submission the client sends the `questionsHash` of the questions it showed.
+
+| What the instructor changed | Result of submitting |
+|---|---|
+| Only the answer key or explanations (hash matches) | Accepted and graded against the **current** key. The student notices nothing |
+| Any prompt, question kind, or option's wording, count or order (hash differs) | `CONFLICT`, and **no attempt is used**. The client refetches and reconciles (below) |
+| Pass mark | Accepted and graded against the current pass mark. A pass already recorded stays |
+| `attemptsAllowed` lowered to or below `attemptsUsed` | Rejected with "No attempts remaining", showing the best score |
+| Quiz, or its lesson or module, archived or hidden | Rejected with "This quiz is no longer available"; local draft discarded |
+
+"Answer-key-only" means the student's screen would look identical before and after. Examples:
+
+- Correcting which option is right: the key said EC2 for "Which service runs containers without managing servers?", and it's corrected to Fargate.
+- Adding another correct option to a multiple-choice question. The screen doesn't change, because it always says "Select all that apply" and never how many are correct.
+- Adding or rewording an explanation.
+
+Reordering options counts as a change even though it's harmless, to keep the rule simple: if the screen could look different, the student reviews.
+
+### Reconciling after `CONFLICT`
+
+The client compares the old and new `questions` by `questionId`:
+
+- **Unchanged:** the answer is kept.
+- **Removed:** the answer is dropped.
+- **New:** starts unanswered, marked **New**.
+- **Changed prompt, options or kind:** answers pointing at options that still exist are kept (for a question switched to single choice, only if exactly one remains), and the question is marked **Updated**.
+
+The student lands on the review screen with "This quiz was updated. Check the marked questions before submitting." The quiz query also refetches when the review screen opens and on window focus, so the banner usually appears before they press Submit; the `CONFLICT` is the guarantee.
+
+## Student experience
+
+The lesson is one scrolling page with items in `order`. A step bar at the top shows each item's state (✓ done, ⚠ finished but not passed, ○ not attempted) and jumps to it. **A failed quiz never blocks moving on.**
+
+The quiz is a card in the lesson flow:
+
+```
+┌ Quiz: Module 3 check ─────────────────────┐
+│ 5 questions · Pass 80% · 1 of 3 attempts  │
+│ Best score: 60%              [Retake quiz]│
+└───────────────────────────────────────────┘
+        ↓ start
+┌ Question 2 of 5        ● ● ○ ○ ○          ┐
+│ Which are AWS serverless compute?         │
+│ Select all that apply                     │  ← multiple choice only
+│ ☐ Lambda   ☐ EC2   ☐ Fargate              │  ← checkboxes vs radios
+│                     [Back]  [Next]        │
+└───────────────────────────────────────────┘
+        ↓ review screen (unanswered flagged) → Submit
+┌ Best: 80% · Passed ✓ ─────────────────────┐
+│ This attempt: 60%                         │
+│ Per-question ✓/✗ + explanation            │  ← per revealAnswers
+│            [Retake quiz]  [Continue →]    │  ← equal weight
+└───────────────────────────────────────────┘
+```
+
+- One question per screen inside the card, with a dot navigator and a review step before submitting.
+- Multiple choice is visually distinct: square checkboxes and "Select all that apply".
+- Feedback only after submitting, never per question, so the key can't be probed one option at a time.
+- In-progress answers are saved to localStorage per quiz. The attempt is created on the server only on submit.
+- A lower retake shows "Your best score of 80% still counts."
+- Accessibility: a `fieldset`/`legend` per question, right and wrong shown with an icon and text (not colour alone), full keyboard support.
+- Prompts and explanations use a read-only Tiptap renderer, shared from `common/shadcn`.
+
+## Instructor experience
+
+- **Add quiz** sits next to Add video and Add text in the lesson's content row.
+- The builder is its own route (`/my-courses/$courseId/quiz/$contentItemId`), not a dialog:
+  - Settings: title, pass mark, attempts allowed, shuffle options, when to reveal answers.
+  - A card per question: Tiptap prompt (the editor is mounted only for the expanded card), Single/Multiple toggle, option rows with a correct marker (radio for single, checkbox for multiple), add/remove/reorder options, optional explanation.
+  - Drag to reorder questions.
+  - **Preview as student**, using the real student component.
+  - The whole quiz saves as one document: `updateQuiz` replaces questions, key and settings together.
+- Validation, in the form and in zod:
+  - At least 2 options per question.
+  - Single choice: exactly 1 correct. Multiple choice: at least 1 correct.
+  - Switching Multiple → Single with more than one correct asks which to keep.
+- Editing a quiz that has attempts warns "N students have attempted this quiz".
+
+## Decisions
+
+| Decision | Why |
+|---|---|
+| A quiz is a content item, not a separate level in the curriculum | Lessons already sequence content items, so quizzes slot in alongside video and text |
+| `questions` and `answerKey` are separate attributes | The student read path never selects the key, so a careless passthrough can't leak answers |
+| Grading happens only on the server | The client never has the key |
+| Attempt limit enforced with a conditional write in the attempt transaction | Holds under concurrent submissions |
+| All-or-nothing grading per question | Simple and unambiguous for v1; partial credit can come later |
+| A failed quiz doesn't block navigation | Quizzes check understanding within a lesson; they aren't gates |
+| Prompts and explanations use Tiptap; options are plain text | Reuses the existing editor; rich options make radio/checkbox rows messy |
+| Best score counts | Retaking should never make a student worse off |
+| A recorded pass is permanent | Consistent with permanent completion; raising the pass mark later shouldn't fail students retroactively |
+| Answer-key-only edits are graded against the new key without interrupting | The student's screen is identical, so a "this quiz was updated" review would have nothing to review |
+| Question edits return `CONFLICT` without using an attempt | The student answered different questions; they shouldn't lose an attempt for it |
+| Feedback only after submitting | Per-question feedback would let students probe the key |
+| Builder on its own route | A reorderable list of question cards is too cramped for a dialog |
+
+## Later
+
+- Images in prompts (Tiptap image extension plus an upload path).
+- Partial credit for multiple choice.
+- Shuffling question order.
+- An instructor results view (e.g. per-question difficulty).
+- **Regrade past attempts:** an instructor action that re-runs grading on stored answers against the current key, only for attempts whose `questionsHash` matches the current questions. Scores are corrected in both directions, but a pass already awarded is kept and a regrade can newly award one. Lesson and course completion are unaffected.
+- Question banks.
+
+## Open questions
+
+- Is a quiz item complete once passed **or** once all attempts are used? See <Link path="design/progress-and-completion">Progress and completion</Link>.

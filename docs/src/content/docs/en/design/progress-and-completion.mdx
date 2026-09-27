@@ -1,0 +1,92 @@
+---
+title: Progress and completion
+description: How item, lesson and course completion are recorded, and the server-side recalculation that is their only writer.
+sidebar:
+  order: 2
+---
+
+import Link from '@components/link.astro';
+
+## The rule
+
+**Lesson and course progress and completion are only ever written server-side, by one Lambda.** They never depend on a student reloading a page or on any other client-side trigger.
+
+The only thing that starts with the student is whether an individual item is complete (reaching the end of a video, for example), because only the browser can observe that. Even then, core-api decides whether it counts, and everything above the item is derived on the server.
+
+## Records
+
+| Record | Keys | Written by | Holds |
+|---|---|---|---|
+| `itemCompletion` | pk `userId`, sk `courseId / lessonId / contentItemId` | core-api | `completedAt` |
+| `progress` (per lesson) | pk `userId`, sk `courseId / lessonId` | Progress recalculation Lambda only | `status`, `completedAt` |
+| `enrolment` | pk `courseId`, sk `userId` | Progress recalculation Lambda only (for these fields) | `progressPercent`, `status`, `completedAt` |
+
+core-api writes `itemCompletion` records and quiz attempts. It never writes `progress` or the enrolment's progress fields.
+
+## When an item is complete
+
+| Item type | Complete when |
+|---|---|
+| Text | Scrolled past, or marked done |
+| Video | Watched to near the end |
+| Quiz | Passed, or all attempts used (open question, below) |
+
+## Lesson and course completion
+
+- A lesson is `completed` when every **effectively visible** item in it has an `itemCompletion`.
+- `progressPercent` is the share of the course's effectively visible items the student has completed. It is always **recomputed** from the current curriculum, never incremented, so adding, removing or hiding content can't leave it wrong.
+- At 100% the enrolment gets `status: 'completed'` and `completedAt`.
+- **Completion is permanent**, for both lessons and courses. Adding content to something a student has completed never makes it incomplete. `progressPercent` can drop below 100 afterwards, but the student sees **Completed ✓ · 2 new items**, and the new items get a **New** badge.
+
+The student's course page may compute progress on read for immediate display. That is display only and never writes.
+
+## Progress recalculation Lambda
+
+A Lambda in `packages/events` is the single writer of lesson `progress` and of the enrolment's `progressPercent`, `status` and `completedAt`.
+
+### Trigger
+
+DynamoDB Streams on the core table, with event-source filters so the Lambda only runs for:
+
+| Stream event | Recalculates |
+|---|---|
+| `itemCompletion` inserted | That one student, in that course |
+| Module, lesson or content item: `visibility` or `archivedAt` changed, or record removed | Every enrolled student in the course |
+
+### What it does
+
+For each affected (student, course):
+
+1. Load the course curriculum once (one `curriculum` collection query) and work out the effectively visible items.
+2. Read the student's `itemCompletion` records for the course (pk `userId`, sk prefix `courseId`).
+3. Write each lesson's `progress`. `completed` is only ever set, never cleared.
+4. Write the enrolment's `progressPercent`. At 100%, set `status: 'completed'` and `completedAt`, conditioned on the enrolment not already being `completed`.
+
+Enrolments share the course's partition key, so listing the students to recalculate is one query. A curriculum change costs one query per enrolled student, which is fine at LMS course sizes; very large courses could later split the work across invocations.
+
+### Idempotency
+
+Every run recomputes from scratch, so a duplicate stream record or a burst of instructor edits just produces the same result again. Records in a stream batch are grouped so each course (or student) is recalculated once per batch.
+
+### Consequences
+
+- Removing the last lesson a student hadn't finished marks them `completed` even if they never come back.
+- Course lists and instructor reports are never stale.
+- Stored values lag the triggering write by the stream delay, typically under a second to a few seconds.
+
+See <Link path="design/live-course-editing">Live course editing</Link> for which instructor actions trigger a recalculation.
+
+## Decisions
+
+| Decision | Why |
+|---|---|
+| Progress and completion are written only by a server-side Lambda | A client-side trigger (e.g. recording completion when the student next opens the course) never fires for a student who has finished and doesn't return |
+| Triggered by DynamoDB Streams, not a message sent by instructor-api after its write | The stream is emitted by the write itself, so a crash between writing and notifying can't lose an update |
+| Recompute from scratch, never increment | Stays correct through adds, removals, hides and restores, and makes duplicate events harmless |
+| Course completion is permanent | Fair to students; certificates stay valid when content is added later |
+| Lesson completion is permanent | Consistent with course completion |
+| Completion is item-level (`itemCompletion`), not only per lesson | "A lesson is done when all its items are done" needs a per-item record |
+
+## Open questions
+
+- Is a quiz item complete once passed **or** once all attempts are used? Recommended: yes, otherwise a student who fails every attempt can never complete the lesson.
