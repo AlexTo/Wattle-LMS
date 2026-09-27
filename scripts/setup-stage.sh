@@ -969,7 +969,8 @@ attach_execution_policy() {
         "s3:PutBucketCORS",
         "s3:PutBucketLogging",
         "s3:DeleteBucketPolicy",
-        "s3:PutBucketAcl"
+        "s3:PutBucketAcl",
+        "s3:AllowVendedLogDeliveryForResource"
       ],
       "Resource": [
         "arn:$AWS_PARTITION:s3:::$BUCKET_PREFIX*"
