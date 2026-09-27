@@ -124,6 +124,13 @@ const runSetup = (settings: OidcSettings, env: Record<string, string> = {}) => {
     ? JSON.parse(readFileSync(trustFile, 'utf8')).Statement[0].Condition
         .StringEquals['token.actions.githubusercontent.com:sub']
     : undefined;
+  const executionPolicyFile = join(
+    out,
+    'cfn-execution-discava-development.policy.json',
+  );
+  const executionPolicy = existsSync(executionPolicyFile)
+    ? JSON.parse(readFileSync(executionPolicyFile, 'utf8'))
+    : undefined;
   return {
     status: result.status,
     // Whitespace-collapsed, since messages are wrapped to the terminal width.
@@ -131,6 +138,7 @@ const runSetup = (settings: OidcSettings, env: Record<string, string> = {}) => {
     iamCalls: calls.filter((call) => call.startsWith('aws iam ')),
     ghVariableCalls: calls.filter((call) => call.startsWith('gh variable ')),
     trustedSubject,
+    executionPolicy,
   };
 };
 
@@ -194,6 +202,27 @@ describe('setup-stage.sh OIDC subject', { timeout: 60_000 }, () => {
 
     expect(trustedSubject).toBe(
       'repo:someone/fork:environment:discava-development',
+    );
+  });
+});
+
+describe('setup-stage.sh execution policy', { timeout: 60_000 }, () => {
+  it('allows tagging MediaConvert job templates as they are created', () => {
+    // Tag-on-create is authorized against jobTemplates/*, not the template's
+    // own ARN, so the stage-prefixed job template statement doesn't cover it.
+    const { status, executionPolicy } = runSetup({
+      kind: 'response',
+      useDefault: true,
+    });
+
+    expect(status).toBe(0);
+    expect(executionPolicy.Statement).toContainEqual(
+      expect.objectContaining({
+        Effect: 'Allow',
+        Action: 'mediaconvert:TagResource',
+        Resource:
+          'arn:aws:mediaconvert:ap-southeast-2:111122223333:jobTemplates/*',
+      }),
     );
   });
 });
