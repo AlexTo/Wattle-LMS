@@ -118,7 +118,8 @@ export const viewCourse = courseProcedure
 
     // Course, its modules, their lessons, and each lesson's content items
     // all share the `curriculum` collection's partition, so one query
-    // returns the whole curriculum.
+    // returns the whole curriculum -- every page of it, since a course's
+    // curriculum can exceed a single 1 MB query page.
     const {
       data: {
         course: courses,
@@ -126,7 +127,9 @@ export const viewCourse = courseProcedure
         lesson: lessons,
         contentItem: contentItems,
       },
-    } = await coreTable.collections.curriculum({ courseId }).go();
+    } = await coreTable.collections
+      .curriculum({ courseId })
+      .go({ pages: 'all' });
     const [course] = courses;
     if (!course) {
       throw new TRPCError({ code: 'NOT_FOUND' });

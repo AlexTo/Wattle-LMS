@@ -99,9 +99,10 @@ export const publicViewCourse = publicCourseProcedure
   .query(async ({ ctx, input }) => {
     const coreTable = ctx.coreTable!;
 
+    // Every page: a course's curriculum can exceed a single 1 MB query page.
     const { data } = await coreTable.collections
       .curriculum({ courseId: input.courseId })
-      .go();
+      .go({ pages: 'all' });
     const [course] = data.course;
     if (!course || course.status !== 'published') {
       throw new TRPCError({ code: 'NOT_FOUND' });
@@ -145,9 +146,10 @@ export const viewCourse = courseProcedure
     // all share the `curriculum` collection's partition (see
     // @discava/core-table's service.ts), so one query returns the whole
     // curriculum instead of a get plus per-module/per-lesson queries.
+    // Every page: a course's curriculum can exceed a single 1 MB query page.
     const { data } = await coreTable.collections
       .curriculum({ courseId: input.courseId })
-      .go();
+      .go({ pages: 'all' });
     const [course] = data.course;
     if (!course) {
       throw new TRPCError({ code: 'NOT_FOUND' });

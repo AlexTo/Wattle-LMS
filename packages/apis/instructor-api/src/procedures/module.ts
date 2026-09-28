@@ -53,6 +53,9 @@ const getModuleOrThrow = async (
 // Content items share the same sk prefix as their parent lesson (moduleId,
 // then lessonId, then contentItemId), so querying by just courseId+moduleId
 // returns every content item across every lesson in the module in one call.
+// Every page is read (a query returns at most 1 MB per page), since callers
+// act on the whole set: a missed page would be left unpublished, or escape
+// the student-activity check and be orphaned by a permanent delete.
 const queryModuleDescendants = async (
   coreTable: CoreTable,
   courseId: string,
@@ -60,10 +63,10 @@ const queryModuleDescendants = async (
 ) => {
   const { data: lessons } = await coreTable.entities.lesson.query
     .primary({ courseId, moduleId })
-    .go();
+    .go({ pages: 'all' });
   const { data: contentItems } = await coreTable.entities.contentItem.query
     .primary({ courseId, moduleId })
-    .go();
+    .go({ pages: 'all' });
   return { lessons, contentItems };
 };
 
@@ -73,12 +76,17 @@ const queryModuleDescendants = async (
 // Everything is deleted transactionally so a failure partway through can't
 // leave an orphaned lesson or content item referencing a module that no
 // longer exists.
+//
+// `checkedArchivedAt`, when given, is the archivedAt the caller checked: the
+// module delete is then conditioned on it being unchanged, so a restore (or a
+// restore and re-archive) landing after that check cancels the delete.
 const hardDeleteModule = async (
   coreTable: CoreTable,
   logger: Logger | undefined,
   courseId: string,
   moduleId: string,
   { lessons, contentItems }: Awaited<ReturnType<typeof queryModuleDescendants>>,
+  checkedArchivedAt?: string,
 ) => {
   // Nothing currently limits how many lessons/content items a module can
   // hold, so a module this large can't be deleted in one transactional
@@ -101,7 +109,12 @@ const hardDeleteModule = async (
   // while cleanup below acted on a stale snapshot of it.
   const { canceled, data: transactionResults } = await coreTable.transaction
     .write((entities) => [
-      entities.module.delete({ courseId, moduleId }).commit(),
+      checkedArchivedAt === undefined
+        ? entities.module.delete({ courseId, moduleId }).commit()
+        : entities.module
+            .delete({ courseId, moduleId })
+            .where((attr, op) => op.eq(attr.archivedAt, checkedArchivedAt))
+            .commit(),
       ...lessons.map(({ lessonId }) =>
         entities.lesson.delete({ courseId, moduleId, lessonId }).commit(),
       ),
@@ -120,9 +133,18 @@ const hardDeleteModule = async (
     .go();
 
   if (canceled) {
-    const staleContentItem = transactionResults?.some(
-      (result) => result?.code === 'ConditionalCheckFailed',
-    );
+    // The module is the transaction's first item.
+    const results = transactionResults ?? [];
+    if (results[0]?.code === 'ConditionalCheckFailed') {
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message:
+          'The module was restored or changed while it was being deleted; nothing was deleted',
+      });
+    }
+    const staleContentItem = results
+      .slice(1)
+      .some((result) => result?.code === 'ConditionalCheckFailed');
     throw new TRPCError({
       code: staleContentItem ? 'CONFLICT' : 'INTERNAL_SERVER_ERROR',
       message: staleContentItem
@@ -416,13 +438,15 @@ export const deleteModulePermanently = courseProcedure
     // hardDeleteModule conditions each content item delete on the updatedAt
     // in this same snapshot, so a student's first activity landing after the
     // check above (which bumps updatedAt) cancels the delete rather than
-    // destroying that data.
+    // destroying that data; and the module delete on the archivedAt checked
+    // above, so a restore in between does too.
     await hardDeleteModule(
       coreTable,
       ctx.logger,
       courseId,
       moduleId,
       descendants,
+      existing.archivedAt,
     );
 
     return existing;

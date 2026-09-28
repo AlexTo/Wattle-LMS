@@ -323,6 +323,10 @@ describe('viewCourse', () => {
 
     const result = await callAs().viewCourse({ courseId: course.courseId });
 
+    // Every page, not just the first: a curriculum can exceed 1 MB.
+    expect(curriculumCollection.mock.results[0].value.go).toHaveBeenCalledWith({
+      pages: 'all',
+    });
     expect(result).toEqual({
       ...course,
       modules: [

@@ -203,6 +203,15 @@ const resolves = (data: unknown) => ({
   go: vi.fn().mockResolvedValue({ data }),
 });
 
+// A query whose results span more than one page: `.go()` returns only the
+// first page unless asked for every page with `{ pages: 'all' }`, as
+// ElectroDB's own default is a single page.
+const resolvesPaged = (firstPage: unknown[], laterPages: unknown[]) => ({
+  go: vi.fn(async (options?: { pages?: number | 'all' }) => ({
+    data: options?.pages === 'all' ? [...firstPage, ...laterPages] : firstPage,
+  })),
+});
+
 // patch(key).set(values) / .remove(attributes), then .go(); returns `data`.
 const patchChain = (data: unknown) => {
   const chain = {
@@ -763,10 +772,11 @@ describe('permanent delete', () => {
     expect(transactionWrite).not.toHaveBeenCalled();
   });
 
-  // The activity check and the delete are separate calls, so each content
-  // item delete is conditioned on the updatedAt from the snapshot the check
-  // looked at: a student's first activity in between bumps updatedAt and
-  // cancels the delete.
+  // The checks and the delete are separate calls, so each content item
+  // delete is conditioned on the updatedAt from the snapshot the activity
+  // check looked at (a student's first activity in between bumps updatedAt),
+  // and the parent's delete on the archivedAt that was checked (a restore in
+  // between clears it). Either cancels the delete.
   it('deletes an archived module and everything under it, conditioned on the checked snapshot', async () => {
     moduleGet.mockReturnValue(resolves({ ...module, archivedAt: ARCHIVED_AT }));
     lessonQueryPrimary.mockReturnValue(resolves([lesson]));
@@ -777,7 +787,12 @@ describe('permanent delete', () => {
     await callAs().deleteModulePermanently(moduleKey);
 
     expect(transactionWrites).toEqual([
-      { entity: 'module', op: 'delete', key: moduleKey },
+      {
+        entity: 'module',
+        op: 'delete',
+        key: moduleKey,
+        condition: `archivedAt = ${ARCHIVED_AT}`,
+      },
       { entity: 'lesson', op: 'delete', key: lessonKey },
       {
         entity: 'contentItem',
@@ -797,7 +812,12 @@ describe('permanent delete', () => {
     await callAs().deleteLessonPermanently(lessonKey);
 
     expect(transactionWrites).toEqual([
-      { entity: 'lesson', op: 'delete', key: lessonKey },
+      {
+        entity: 'lesson',
+        op: 'delete',
+        key: lessonKey,
+        condition: `archivedAt = ${ARCHIVED_AT}`,
+      },
       {
         entity: 'contentItem',
         op: 'delete',
@@ -870,5 +890,158 @@ describe('permanent delete', () => {
       callAs().deleteContentItemPermanently(itemKey('item-1')),
     ).rejects.toMatchObject({ code: 'CONFLICT' });
     expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
+  });
+});
+
+describe('descendants spanning more than one query page', () => {
+  // Invariant: publish and permanent delete act on every descendant, not
+  // just the first page of results.
+  it('publishModule also publishes a hidden content item on a later page', async () => {
+    moduleGet.mockReturnValue(resolves(module));
+    contentItemQueryPrimary.mockReturnValue(
+      resolvesPaged(
+        [textItem('item-1')],
+        [textItem('item-on-page-2', { visibility: 'hidden' })],
+      ),
+    );
+
+    await callAs().publishModule(moduleKey);
+
+    expect(transactionWrites).toEqual([
+      {
+        entity: 'contentItem',
+        op: 'patch',
+        key: itemKey('item-on-page-2'),
+        set: { visibility: 'visible' },
+      },
+    ]);
+  });
+
+  it('publishLesson also publishes a hidden content item on a later page', async () => {
+    contentItemQueryPrimary.mockReturnValue(
+      resolvesPaged(
+        [textItem('item-1')],
+        [textItem('item-on-page-2', { visibility: 'hidden' })],
+      ),
+    );
+
+    await callAs().publishLesson(lessonKey);
+
+    expect(transactionWrites).toEqual([
+      {
+        entity: 'contentItem',
+        op: 'patch',
+        key: itemKey('item-on-page-2'),
+        set: { visibility: 'visible' },
+      },
+    ]);
+  });
+
+  it('deleteModulePermanently refuses when the only item with student activity is on a later page', async () => {
+    moduleGet.mockReturnValue(resolves({ ...module, archivedAt: ARCHIVED_AT }));
+    contentItemQueryPrimary.mockReturnValue(
+      resolvesPaged(
+        [textItem('item-1')],
+        [textItem('item-on-page-2', { studentActivityCount: 1 })],
+      ),
+    );
+
+    await expect(
+      callAs().deleteModulePermanently(moduleKey),
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+    expect(transactionWrite).not.toHaveBeenCalled();
+  });
+
+  it('deleteLessonPermanently refuses when the only item with student activity is on a later page', async () => {
+    lessonGet.mockReturnValue(resolves({ ...lesson, archivedAt: ARCHIVED_AT }));
+    contentItemQueryPrimary.mockReturnValue(
+      resolvesPaged(
+        [textItem('item-1')],
+        [textItem('item-on-page-2', { studentActivityCount: 1 })],
+      ),
+    );
+
+    await expect(
+      callAs().deleteLessonPermanently(lessonKey),
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+    expect(transactionWrite).not.toHaveBeenCalled();
+  });
+
+  it('a permanent delete removes descendants on every page', async () => {
+    lessonGet.mockReturnValue(resolves({ ...lesson, archivedAt: ARCHIVED_AT }));
+    contentItemQueryPrimary.mockReturnValue(
+      resolvesPaged([textItem('item-1')], [textItem('item-on-page-2')]),
+    );
+
+    await callAs().deleteLessonPermanently(lessonKey);
+
+    expect(
+      transactionWrites
+        .filter(({ entity }) => entity === 'contentItem')
+        .map(({ key }) => key.contentItemId),
+    ).toEqual(['item-1', 'item-on-page-2']);
+  });
+});
+
+describe('parent restored while being permanently deleted', () => {
+  // The transaction's first result is the parent's; DynamoDB reports
+  // ConditionalCheckFailed there when the restore landed after the
+  // archivedAt check, and the whole transaction is canceled.
+  const parentRestored = {
+    canceled: true,
+    data: [{ code: 'ConditionalCheckFailed' }, { code: 'None' }],
+  };
+
+  it('deleteModulePermanently throws CONFLICT and cleans up nothing', async () => {
+    moduleGet.mockReturnValue(resolves({ ...module, archivedAt: ARCHIVED_AT }));
+    contentItemQueryPrimary.mockReturnValue(
+      resolves([
+        textItem('item-1', {
+          type: 'video',
+          s3Key: 'key.mp4',
+          mimeType: 'video/mp4',
+        }),
+      ]),
+    );
+    transactionGo.mockResolvedValue(parentRestored);
+
+    await expect(
+      callAs().deleteModulePermanently(moduleKey),
+    ).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message:
+        'The module was restored or changed while it was being deleted; nothing was deleted',
+    });
+    expect(bestEffortCancelTranscodeJobs).not.toHaveBeenCalled();
+    expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
+  });
+
+  it('deleteLessonPermanently throws CONFLICT and cleans up nothing', async () => {
+    lessonGet.mockReturnValue(resolves({ ...lesson, archivedAt: ARCHIVED_AT }));
+    contentItemQueryPrimary.mockReturnValue(resolves([textItem('item-1')]));
+    transactionGo.mockResolvedValue(parentRestored);
+
+    await expect(
+      callAs().deleteLessonPermanently(lessonKey),
+    ).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message:
+        'The lesson was restored or changed while it was being deleted; nothing was deleted',
+    });
+    expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
+  });
+
+  // Draft courses keep their unconditional hard delete: nothing there is
+  // ever archived, so there's no archive state to check.
+  it('a draft-course delete leaves the parent delete unconditional', async () => {
+    await callAs().deleteModule(moduleKey);
+    expect(transactionWrites).toEqual([
+      { entity: 'module', op: 'delete', key: moduleKey },
+    ]);
+
+    await callAs().deleteLesson(lessonKey);
+    expect(transactionWrites).toEqual([
+      { entity: 'lesson', op: 'delete', key: lessonKey },
+    ]);
   });
 });
