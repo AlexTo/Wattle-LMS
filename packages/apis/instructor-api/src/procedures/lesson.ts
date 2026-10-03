@@ -11,6 +11,7 @@ import {
   initialVisibility,
   isDraftCourse,
   MAX_TRANSACTION_ITEMS,
+  requireAncestorsNotArchived,
   requireCourseInstructor,
   requireNotArchived,
 } from '../lib/course-lifecycle.js';
@@ -83,9 +84,9 @@ const hardDeleteLesson = async (
   // lesson this large can't be deleted in one transactional cascade.
   if (contentItems.length + 1 > MAX_TRANSACTION_ITEMS) {
     throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
+      code: 'PRECONDITION_FAILED',
       message:
-        'Lesson has too many content items to delete in a single operation; delete some content items first',
+        'This lesson has too many content items to delete in one operation (the limit is 100 records). Delete some of its content items first, then the lesson.',
     });
   }
 
@@ -212,6 +213,7 @@ export const updateLesson = courseProcedure
       lessonId,
     });
     requireNotArchived(existing, 'Restore the lesson before editing it');
+    await requireAncestorsNotArchived(coreTable, { courseId, moduleId });
 
     const { data: lesson } = await coreTable.entities.lesson
       .patch({ courseId, moduleId, lessonId })
@@ -271,8 +273,10 @@ export const deleteLesson = courseProcedure
   });
 
 // Publishes the lesson along with every hidden content item in it in one
-// transaction, so students see a newly built lesson complete. Students still
-// don't see it until its module is visible too.
+// transaction, so students see a newly built lesson complete -- including
+// any item that was hidden on purpose, which has to be hidden again
+// afterwards if it should stay hidden. Students still don't see the lesson
+// until its module is visible too.
 export const publishLesson = courseProcedure
   .input(PublishLessonInputSchema)
   .output(PublishLessonOutputSchema)
@@ -284,6 +288,7 @@ export const publishLesson = courseProcedure
     await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
     const existing = await getLessonOrThrow(coreTable, key);
     requireNotArchived(existing, 'Restore the lesson before publishing it');
+    await requireAncestorsNotArchived(coreTable, { courseId, moduleId });
 
     const contentItemsToPublish = (
       await queryLessonContentItems(coreTable, key)
@@ -297,9 +302,9 @@ export const publishLesson = courseProcedure
     }
     if (writeCount > MAX_TRANSACTION_ITEMS) {
       throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
+        code: 'PRECONDITION_FAILED',
         message:
-          'Lesson has too many hidden content items to publish in a single operation; publish some content items first',
+          'This lesson has too many hidden content items to publish in one operation (the limit is 100 records). Publish some of its content items first, then the lesson.',
       });
     }
 
@@ -330,7 +335,10 @@ export const publishLesson = courseProcedure
   });
 
 // Hides only the lesson itself; its content items keep their own
-// visibility, so publishing the lesson again shows them as they were.
+// visibility. Students stop seeing all of them, since an item is only shown
+// under a visible lesson. Publishing the lesson again also publishes every
+// hidden item in it (see publishLesson), so an item meant to stay hidden has
+// to be hidden again afterwards.
 export const hideLesson = courseProcedure
   .input(HideLessonInputSchema)
   .output(HideLessonOutputSchema)
@@ -342,6 +350,7 @@ export const hideLesson = courseProcedure
     await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
     const existing = await getLessonOrThrow(coreTable, key);
     requireNotArchived(existing, 'Restore the lesson before hiding it');
+    await requireAncestorsNotArchived(coreTable, { courseId, moduleId });
     if (existing.visibility === 'hidden') {
       return existing;
     }

@@ -9,6 +9,7 @@ import { courseProcedure } from '../init.js';
 import {
   getCourseOrThrow,
   isDraftCourse,
+  requireAncestorsNotArchived,
   requireCourseInstructor,
   requireNotArchived,
 } from '../lib/course-lifecycle.js';
@@ -168,6 +169,7 @@ export const publishContentItem = courseProcedure
       existing,
       'Restore the content item before publishing it',
     );
+    await requireAncestorsNotArchived(coreTable, key);
     if (existing.visibility === 'visible') {
       return asContentItemOutput<IPublishContentItemOutput>(existing);
     }
@@ -191,6 +193,7 @@ export const hideContentItem = courseProcedure
     await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
     const existing = await getContentItemOrThrow(coreTable, key);
     requireNotArchived(existing, 'Restore the content item before hiding it');
+    await requireAncestorsNotArchived(coreTable, key);
     if (existing.visibility === 'hidden') {
       return asContentItemOutput<IHideContentItemOutput>(existing);
     }

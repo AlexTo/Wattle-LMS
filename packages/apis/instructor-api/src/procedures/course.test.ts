@@ -346,6 +346,73 @@ describe('viewCourse', () => {
     });
   });
 
+  // Each lesson goes under its own module and each item under its own
+  // lesson, all sorted by order, however the query returns them.
+  it('groups lessons under their module and items under their lesson, sorted by order', async () => {
+    courseInstructorGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: { courseId: course.courseId, instructorId: INSTRUCTOR_SUB },
+      }),
+    });
+    const moduleA = { ...module, moduleId: 'module-a', order: 2 };
+    const moduleB = { ...module, moduleId: 'module-b', order: 1 };
+    const lessonIn = (moduleId: string, lessonId: string, order: number) => ({
+      ...lesson,
+      archivedAt: undefined,
+      moduleId,
+      lessonId,
+      order,
+    });
+    const itemIn = (
+      moduleId: string,
+      lessonId: string,
+      contentItemId: string,
+      order: number,
+    ) => ({ ...contentItem(contentItemId, order), moduleId, lessonId });
+    curriculumCollection.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: {
+          course: [course],
+          module: [moduleA, moduleB],
+          lesson: [
+            lessonIn('module-a', 'a2', 2),
+            lessonIn('module-b', 'b1', 1),
+            lessonIn('module-a', 'a1', 1),
+          ],
+          contentItem: [
+            itemIn('module-a', 'a1', 'a1-item-2', 2),
+            itemIn('module-b', 'b1', 'b1-item-1', 1),
+            itemIn('module-a', 'a1', 'a1-item-1', 1),
+          ],
+        },
+      }),
+    });
+
+    const result = await callAs().viewCourse({ courseId: course.courseId });
+
+    expect(
+      result.modules.map((m) => ({
+        moduleId: m.moduleId,
+        lessons: m.lessons.map((l) => ({
+          lessonId: l.lessonId,
+          items: l.contentItems.map((i) => i.contentItemId),
+        })),
+      })),
+    ).toEqual([
+      {
+        moduleId: 'module-b',
+        lessons: [{ lessonId: 'b1', items: ['b1-item-1'] }],
+      },
+      {
+        moduleId: 'module-a',
+        lessons: [
+          { lessonId: 'a1', items: ['a1-item-1', 'a1-item-2'] },
+          { lessonId: 'a2', items: [] },
+        ],
+      },
+    ]);
+  });
+
   it('throws NOT_FOUND when the course does not exist', async () => {
     courseInstructorGet.mockReturnValue({
       go: vi.fn().mockResolvedValue({

@@ -329,12 +329,12 @@ describe('transcodeComplete', () => {
   });
 });
 
-// An instructor can archive a video while it's still transcoding. Archiving
-// keeps the S3 objects and the running job, and only restore clears
-// archivedAt -- so the completion must still land (a restored video then
-// plays), and must leave the archive state and visibility exactly as they
-// were rather than bringing the video back for students.
-describe('transcodeComplete on a content item archived mid-transcode', () => {
+// An instructor can archive a video while it's still transcoding. The
+// handler never reads the record, so archive state isn't an input here; what
+// matters is that its write leaves archivedAt and visibility alone and isn't
+// conditioned on them -- so the outcome still lands on an archived video (it
+// plays once restored) without bringing it back for students.
+describe('transcodeComplete leaves archive state and visibility alone', () => {
   // Renders a `.where()` callback into a readable condition string.
   const renderCondition = (where: (attr: any, op: any) => string): string =>
     where(new Proxy({}, { get: (_target, name) => String(name) }), {

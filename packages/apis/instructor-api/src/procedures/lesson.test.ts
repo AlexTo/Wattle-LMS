@@ -141,6 +141,9 @@ const contentItem = {
 beforeEach(() => {
   vi.clearAllMocks();
 
+  // A draft course, so delete here is the permanent, cascading delete. What
+  // changes outside a draft course (archive instead) is covered in
+  // curriculum-lifecycle.test.ts.
   courseGet.mockReturnValue({
     go: vi.fn().mockResolvedValue({ data: { status: 'draft' } }),
   });
@@ -525,7 +528,7 @@ describe('deleteLesson', () => {
   // DynamoDB transactions cap at 100 items; a lesson with too many content
   // items can't be cascade-deleted in one, so this must fail fast rather
   // than let DynamoDB reject the oversized transaction.
-  it('throws INTERNAL_SERVER_ERROR without attempting a transaction when the lesson has too many content items', async () => {
+  it('throws PRECONDITION_FAILED without attempting a transaction when the lesson has too many content items', async () => {
     contentItemQueryPrimary.mockReturnValue({
       go: vi.fn().mockResolvedValue({
         data: Array.from({ length: 100 }, (_, i) => ({
@@ -541,7 +544,7 @@ describe('deleteLesson', () => {
         moduleId: MODULE_ID,
         lessonId: lesson.lessonId,
       }),
-    ).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
     expect(transactionWrite).not.toHaveBeenCalled();
   });
 

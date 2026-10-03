@@ -16,6 +16,7 @@ import {
 import {
   getCourseOrThrow,
   initialVisibility,
+  requireAncestorsNotArchived,
   requireNotArchived,
 } from '../lib/course-lifecycle.js';
 import {
@@ -94,6 +95,7 @@ export const createContentItemVideoUploadUrl = courseProcedure
       lesson,
       'Restore the lesson before adding content to it',
     );
+    await requireAncestorsNotArchived(coreTable, { courseId, moduleId });
 
     const ext = extname(fileName).slice(1).toLowerCase();
     const contentType = ALLOWED_VIDEO_TYPES[ext];
@@ -192,6 +194,7 @@ export const createContentItemVideo = courseProcedure
       lesson,
       'Restore the lesson before adding content to it',
     );
+    await requireAncestorsNotArchived(coreTable, { courseId, moduleId });
     const course = await getCourseOrThrow(coreTable, courseId);
 
     // The object key must be one this lesson's own upload-url procedure
@@ -390,6 +393,11 @@ export const updateContentItemVideo = courseProcedure
       });
     }
     requireNotArchived(existing, 'Restore the content item before editing it');
+    await requireAncestorsNotArchived(coreTable, {
+      courseId,
+      moduleId,
+      lessonId,
+    });
 
     // Replacing the underlying video: the object key must at least be
     // scoped to this lesson, so a caller can't point the record at an

@@ -625,6 +625,7 @@ describe('publishLesson', () => {
     await expect(callAs().publishLesson(lessonKey)).rejects.toMatchObject({
       code: 'PRECONDITION_FAILED',
     });
+    expect(transactionWrite).not.toHaveBeenCalled();
   });
 });
 
@@ -650,10 +651,12 @@ describe('publishContentItem and hide*', () => {
     await expect(
       callAs().publishContentItem(itemKey('item-1')),
     ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+    expect(contentItemPatch).not.toHaveBeenCalled();
   });
 
-  // Hiding is not cascaded: children keep their own visibility, so
-  // publishing the parent again shows them as they were.
+  // Hiding is not cascaded: children keep their own visibility (students
+  // stop seeing them anyway, since a record is only shown under visible
+  // ancestors).
   it('hides only the module itself', async () => {
     const patch = patchChain({ ...module, visibility: 'hidden' });
     modulePatch.mockReturnValue(patch);
@@ -662,6 +665,7 @@ describe('publishContentItem and hide*', () => {
 
     expect(patch.set).toHaveBeenCalledWith({ visibility: 'hidden' });
     expect(lessonPatch).not.toHaveBeenCalled();
+    expect(contentItemPatch).not.toHaveBeenCalled();
     expect(transactionWrite).not.toHaveBeenCalled();
   });
 
@@ -1165,6 +1169,61 @@ describe('DynamoDB 100-item transaction limit', () => {
       textItem(`item-${index}`, { visibility: 'hidden' }),
     );
 
+  // Over the limit isn't a dead end: the refusal says what to do so the
+  // operation fits, and it's reported as a precondition, not a server fault.
+  it.each([
+    [
+      'publishModule',
+      moduleKey,
+      () =>
+        moduleGet.mockReturnValue(
+          resolves({ ...module, visibility: 'hidden' }),
+        ),
+      'Publish some of its lessons first, then the module.',
+    ],
+    [
+      'publishLesson',
+      lessonKey,
+      () =>
+        lessonGet.mockReturnValue(
+          resolves({ ...lesson, visibility: 'hidden' }),
+        ),
+      'Publish some of its content items first, then the lesson.',
+    ],
+    [
+      'deleteModulePermanently',
+      moduleKey,
+      () =>
+        moduleGet.mockReturnValue(
+          resolves({ ...module, archivedAt: ARCHIVED_AT }),
+        ),
+      'Delete some of its lessons first, then the module.',
+    ],
+    [
+      'deleteLessonPermanently',
+      lessonKey,
+      () =>
+        lessonGet.mockReturnValue(
+          resolves({ ...lesson, archivedAt: ARCHIVED_AT }),
+        ),
+      'Delete some of its content items first, then the lesson.',
+    ],
+  ] as const)(
+    '%s explains how to get under the limit',
+    async (procedure, input, arrange, nextStep) => {
+      arrange();
+      contentItemQueryPrimary.mockReturnValue(resolves(hiddenItems(100)));
+
+      const error = await (callAs() as any)
+        [procedure](input)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toMatchObject({ code: 'PRECONDITION_FAILED' });
+      expect(error.message).toContain('the limit is 100 records');
+      expect(error.message).toContain(nextStep);
+    },
+  );
+
   // Invariant: an operation that must be atomic is refused outright rather
   // than split, so it never applies to only part of the module or lesson.
   it('publishModule refuses when more than 100 records would be published', async () => {
@@ -1172,7 +1231,7 @@ describe('DynamoDB 100-item transaction limit', () => {
     contentItemQueryPrimary.mockReturnValue(resolves(hiddenItems(100)));
 
     await expect(callAs().publishModule(moduleKey)).rejects.toMatchObject({
-      code: 'INTERNAL_SERVER_ERROR',
+      code: 'PRECONDITION_FAILED',
     });
     expect(transactionWrite).not.toHaveBeenCalled();
   });
@@ -1191,7 +1250,7 @@ describe('DynamoDB 100-item transaction limit', () => {
     contentItemQueryPrimary.mockReturnValue(resolves(hiddenItems(100)));
 
     await expect(callAs().publishLesson(lessonKey)).rejects.toMatchObject({
-      code: 'INTERNAL_SERVER_ERROR',
+      code: 'PRECONDITION_FAILED',
     });
     expect(transactionWrite).not.toHaveBeenCalled();
   });
@@ -1202,7 +1261,7 @@ describe('DynamoDB 100-item transaction limit', () => {
 
     await expect(
       callAs().deleteModulePermanently(moduleKey),
-    ).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
     expect(transactionWrite).not.toHaveBeenCalled();
   });
 
@@ -1212,7 +1271,7 @@ describe('DynamoDB 100-item transaction limit', () => {
 
     await expect(
       callAs().deleteLessonPermanently(lessonKey),
-    ).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
     expect(transactionWrite).not.toHaveBeenCalled();
   });
 });
@@ -1344,4 +1403,245 @@ describe('editing an archived record', () => {
       expect(chain.set).toHaveBeenCalledWith({ title: 'New title' });
     },
   );
+});
+
+describe('under an archived module or lesson', () => {
+  // Invariant: an archived module or lesson freezes everything under it --
+  // nothing beneath it can be added, edited, published or hidden until it's
+  // restored, so a restore brings back exactly what was archived.
+  const archivedModule = () =>
+    moduleGet.mockReturnValue(resolves({ ...module, archivedAt: ARCHIVED_AT }));
+  const archivedLesson = () =>
+    lessonGet.mockReturnValue(resolves({ ...lesson, archivedAt: ARCHIVED_AT }));
+
+  it.each([
+    ['updateLesson', { ...lessonKey, title: 'New title' }],
+    ['publishLesson', lessonKey],
+    ['hideLesson', lessonKey],
+    ['createContentItemText', { ...lessonKey, title: 'New text', body: '{}' }],
+    ['updateContentItemText', { ...itemKey('item-1'), title: 'New title' }],
+    ['publishContentItem', itemKey('item-1')],
+    ['hideContentItem', itemKey('item-1')],
+  ] as const)(
+    '%s is refused when the module is archived, writing nothing',
+    async (procedure, input) => {
+      archivedModule();
+      lessonGet.mockReturnValue(resolves({ ...lesson, visibility: 'hidden' }));
+      contentItemGet.mockReturnValue(
+        resolves(textItem('item-1', { visibility: 'hidden' })),
+      );
+
+      await expect((callAs() as any)[procedure](input)).rejects.toMatchObject({
+        code: 'PRECONDITION_FAILED',
+        message: 'Restore the module first',
+      });
+      expect(lessonPatch).not.toHaveBeenCalled();
+      expect(contentItemPatch).not.toHaveBeenCalled();
+      expect(contentItemCreate).not.toHaveBeenCalled();
+      expect(transactionWrite).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['updateContentItemText', { ...itemKey('item-1'), title: 'New title' }],
+    ['publishContentItem', itemKey('item-1')],
+    ['hideContentItem', itemKey('item-1')],
+  ] as const)(
+    '%s is refused when the lesson is archived, writing nothing',
+    async (procedure, input) => {
+      archivedLesson();
+      contentItemGet.mockReturnValue(
+        resolves(textItem('item-1', { visibility: 'hidden' })),
+      );
+
+      await expect((callAs() as any)[procedure](input)).rejects.toMatchObject({
+        code: 'PRECONDITION_FAILED',
+        message: 'Restore the lesson first',
+      });
+      expect(contentItemPatch).not.toHaveBeenCalled();
+    },
+  );
+
+  // The module is checked first, matching the order restores must happen
+  // in.
+  it('names the module when both the module and the lesson are archived', async () => {
+    archivedModule();
+    archivedLesson();
+
+    await expect(
+      callAs().publishContentItem(itemKey('item-1')),
+    ).rejects.toMatchObject({ message: 'Restore the module first' });
+  });
+
+  it.each([
+    [
+      'hideLesson',
+      lessonKey,
+      lessonGet,
+      { ...lesson, archivedAt: ARCHIVED_AT },
+    ],
+    [
+      'hideContentItem',
+      itemKey('item-1'),
+      contentItemGet,
+      textItem('item-1', { archivedAt: ARCHIVED_AT }),
+    ],
+  ] as const)(
+    '%s refuses an archived record itself, writing nothing',
+    async (procedure, input, get, record) => {
+      get.mockReturnValue(resolves(record));
+
+      await expect((callAs() as any)[procedure](input)).rejects.toMatchObject({
+        code: 'PRECONDITION_FAILED',
+      });
+      expect(lessonPatch).not.toHaveBeenCalled();
+      expect(contentItemPatch).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('lessons spanning more than one query page', () => {
+  it('publishModule publishes a hidden lesson on a later page, and leaves items under an archived later-page lesson alone', async () => {
+    lessonQueryPrimary.mockReturnValue(
+      resolvesPaged(
+        [lesson],
+        [
+          { ...lesson, lessonId: 'lesson-page-2', visibility: 'hidden' },
+          {
+            ...lesson,
+            lessonId: 'lesson-archived-page-2',
+            visibility: 'hidden',
+            archivedAt: ARCHIVED_AT,
+          },
+        ],
+      ),
+    );
+    contentItemQueryPrimary.mockReturnValue(
+      resolves([
+        textItem('item-under-archived', {
+          lessonId: 'lesson-archived-page-2',
+          visibility: 'hidden',
+        }),
+      ]),
+    );
+
+    await callAs().publishModule(moduleKey);
+
+    expect(transactionWrites).toEqual([
+      {
+        entity: 'lesson',
+        op: 'patch',
+        key: { ...moduleKey, lessonId: 'lesson-page-2' },
+        set: { visibility: 'visible' },
+      },
+    ]);
+  });
+
+  it('deleteModulePermanently deletes lessons on every page', async () => {
+    moduleGet.mockReturnValue(resolves({ ...module, archivedAt: ARCHIVED_AT }));
+    lessonQueryPrimary.mockReturnValue(
+      resolvesPaged([lesson], [{ ...lesson, lessonId: 'lesson-page-2' }]),
+    );
+
+    await callAs().deleteModulePermanently(moduleKey);
+
+    expect(
+      transactionWrites
+        .filter(({ entity }) => entity === 'lesson')
+        .map(({ key }) => key.lessonId),
+    ).toEqual([LESSON_ID, 'lesson-page-2']);
+  });
+});
+
+describe('100-record boundary', () => {
+  const items = (count: number, overrides: Record<string, unknown> = {}) =>
+    Array.from({ length: count }, (_, index) =>
+      textItem(`item-${index}`, overrides),
+    );
+
+  // Exactly 100 records still fits in one transaction.
+  it('publishLesson publishes a hidden lesson with 99 hidden items', async () => {
+    lessonGet
+      .mockReturnValueOnce(resolves({ ...lesson, visibility: 'hidden' }))
+      .mockReturnValueOnce(resolves(lesson));
+    contentItemQueryPrimary.mockReturnValue(
+      resolves(items(99, { visibility: 'hidden' })),
+    );
+
+    await callAs().publishLesson(lessonKey);
+
+    expect(transactionWrites).toHaveLength(100);
+  });
+
+  it('deleteLessonPermanently deletes a lesson with 99 items', async () => {
+    lessonGet.mockReturnValue(resolves({ ...lesson, archivedAt: ARCHIVED_AT }));
+    contentItemQueryPrimary.mockReturnValue(resolves(items(99)));
+
+    await callAs().deleteLessonPermanently(lessonKey);
+
+    expect(transactionWrites).toHaveLength(100);
+  });
+
+  it('deleteModulePermanently deletes a module with 99 records under it', async () => {
+    moduleGet.mockReturnValue(resolves({ ...module, archivedAt: ARCHIVED_AT }));
+    lessonQueryPrimary.mockReturnValue(resolves([lesson]));
+    contentItemQueryPrimary.mockReturnValue(resolves(items(98)));
+
+    await callAs().deleteModulePermanently(moduleKey);
+
+    expect(transactionWrites).toHaveLength(100);
+  });
+});
+
+describe('remaining edge cases', () => {
+  it('restoreLesson throws NOT_FOUND when its module no longer exists', async () => {
+    lessonGet.mockReturnValue(resolves({ ...lesson, archivedAt: ARCHIVED_AT }));
+    moduleGet.mockReturnValue(resolves(null));
+
+    await expect(callAs().restoreLesson(lessonKey)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+    expect(lessonPatch).not.toHaveBeenCalled();
+  });
+
+  it('deleteContentItemPermanently rethrows a failure that is not a condition check, rather than reporting CONFLICT', async () => {
+    contentItemGet.mockReturnValue(
+      resolves(textItem('item-1', { archivedAt: ARCHIVED_AT })),
+    );
+    contentItemDelete.mockReturnValue({
+      where: () => ({
+        go: vi.fn().mockRejectedValue(new Error('Throttled')),
+      }),
+    });
+
+    await expect(
+      callAs().deleteContentItemPermanently(itemKey('item-1')),
+    ).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+  });
+
+  it('deleteContentItemPermanently reports INTERNAL_SERVER_ERROR when the delete returns no record', async () => {
+    contentItemGet.mockReturnValue(
+      resolves(textItem('item-1', { archivedAt: ARCHIVED_AT })),
+    );
+    contentItemDelete.mockReturnValue({
+      where: () => ({ go: vi.fn().mockResolvedValue({ data: null }) }),
+    });
+
+    await expect(
+      callAs().deleteContentItemPermanently(itemKey('item-1')),
+    ).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+  });
+
+  it('deleteContentItemPermanently deletes an archived text item without any S3 or transcode cleanup', async () => {
+    const text = textItem('item-1', { archivedAt: ARCHIVED_AT });
+    contentItemGet.mockReturnValue(resolves(text));
+    contentItemDelete.mockReturnValue({
+      where: () => ({ go: vi.fn().mockResolvedValue({ data: text }) }),
+    });
+
+    await callAs().deleteContentItemPermanently(itemKey('item-1'));
+
+    expect(bestEffortCancelTranscodeJobs).not.toHaveBeenCalled();
+    expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
+  });
 });

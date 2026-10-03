@@ -8,6 +8,7 @@ import { courseProcedure } from '../init.js';
 import {
   getCourseOrThrow,
   initialVisibility,
+  requireAncestorsNotArchived,
   requireNotArchived,
 } from '../lib/course-lifecycle.js';
 import {
@@ -47,6 +48,7 @@ export const createContentItemText = courseProcedure
       lesson,
       'Restore the lesson before adding content to it',
     );
+    await requireAncestorsNotArchived(coreTable, { courseId, moduleId });
     const course = await getCourseOrThrow(coreTable, courseId);
 
     // Text items have no upload step (unlike video, whose id is minted by
@@ -122,6 +124,11 @@ export const updateContentItemText = courseProcedure
       });
     }
     requireNotArchived(existing, 'Restore the content item before editing it');
+    await requireAncestorsNotArchived(coreTable, {
+      courseId,
+      moduleId,
+      lessonId,
+    });
 
     const { data: contentItem } = await coreTable.entities.contentItem
       .patch({ courseId, moduleId, lessonId, contentItemId })

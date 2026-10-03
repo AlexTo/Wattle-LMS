@@ -107,6 +107,9 @@ const textContentItem = {
 beforeEach(() => {
   vi.clearAllMocks();
 
+  // A draft course, so delete here is the permanent, cascading delete. What
+  // changes outside a draft course (archive instead) is covered in
+  // curriculum-lifecycle.test.ts.
   courseGet.mockReturnValue({
     go: vi.fn().mockResolvedValue({ data: { status: 'draft' } }),
   });

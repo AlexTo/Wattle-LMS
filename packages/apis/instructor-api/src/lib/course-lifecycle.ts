@@ -38,9 +38,9 @@ export const getCourseOrThrow = async (
 
 // A draft course has never been open to students, so its curriculum is
 // edited freely: new records are visible straight away and delete is
-// permanent. Any other status (published, or archived after having been
-// published) may have students with progress or attempts, so new records
-// start hidden until published and delete archives instead.
+// permanent. A published or archived course may have students with
+// progress or attempts, so new records start hidden until published and
+// delete archives instead.
 export const isDraftCourse = (course: { status: string }) =>
   course.status === 'draft';
 
@@ -54,6 +54,37 @@ export const requireNotArchived = (
 ) => {
   if (record.archivedAt) {
     throw new TRPCError({ code: 'PRECONDITION_FAILED', message });
+  }
+};
+
+// An archived module or lesson freezes everything under it: nothing beneath
+// it can be added, edited, published or hidden until it's restored, so a
+// restore brings back exactly what was archived. Checks the module, and the
+// lesson too when `lessonId` is given; the module is checked first, matching
+// the order restores have to happen in.
+export const requireAncestorsNotArchived = async (
+  coreTable: CoreTable,
+  {
+    courseId,
+    moduleId,
+    lessonId,
+  }: { courseId: string; moduleId: string; lessonId?: string },
+) => {
+  const [{ data: module }, lessonResult] = await Promise.all([
+    coreTable.entities.module.get({ courseId, moduleId }).go(),
+    lessonId === undefined
+      ? Promise.resolve(undefined)
+      : coreTable.entities.lesson.get({ courseId, moduleId, lessonId }).go(),
+  ]);
+  if (!module) {
+    throw new TRPCError({ code: 'NOT_FOUND' });
+  }
+  requireNotArchived(module, 'Restore the module first');
+  if (lessonResult !== undefined) {
+    if (!lessonResult.data) {
+      throw new TRPCError({ code: 'NOT_FOUND' });
+    }
+    requireNotArchived(lessonResult.data, 'Restore the lesson first');
   }
 };
 

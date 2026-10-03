@@ -11,6 +11,7 @@ import {
 } from './content-item-text.js';
 
 const {
+  moduleGet,
   courseGet,
   courseInstructorGet,
   lessonGet,
@@ -20,6 +21,7 @@ const {
   contentItemPatch,
   contentItemPatchSet,
 } = vi.hoisted(() => ({
+  moduleGet: vi.fn(),
   courseGet: vi.fn(),
   courseInstructorGet: vi.fn(),
   lessonGet: vi.fn(),
@@ -36,6 +38,9 @@ vi.mock('@discava/core-table', () => ({
       course: { get: courseGet },
       courseInstructor: {
         get: courseInstructorGet,
+      },
+      module: {
+        get: moduleGet,
       },
       lesson: {
         get: lessonGet,
@@ -133,6 +138,12 @@ beforeEach(() => {
   courseInstructorGet.mockReturnValue({
     go: vi.fn().mockResolvedValue({
       data: { courseId: COURSE_ID, instructorId: INSTRUCTOR_SUB },
+    }),
+  });
+  // The module above the lesson; not archived unless a test says so.
+  moduleGet.mockReturnValue({
+    go: vi.fn().mockResolvedValue({
+      data: { moduleId: MODULE_ID, visibility: 'visible' },
     }),
   });
   lessonGet.mockReturnValue({

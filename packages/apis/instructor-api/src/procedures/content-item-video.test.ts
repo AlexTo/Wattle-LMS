@@ -13,6 +13,7 @@ import {
 } from './content-item-video.js';
 
 const {
+  moduleGet,
   courseGet,
   courseInstructorGet,
   lessonGet,
@@ -35,6 +36,7 @@ const {
   bestEffortCancelTranscodeJobs,
   getVideoUploadETag,
 } = vi.hoisted(() => ({
+  moduleGet: vi.fn(),
   courseGet: vi.fn(),
   courseInstructorGet: vi.fn(),
   lessonGet: vi.fn(),
@@ -64,6 +66,9 @@ vi.mock('@discava/core-table', () => ({
       course: { get: courseGet },
       courseInstructor: {
         get: courseInstructorGet,
+      },
+      module: {
+        get: moduleGet,
       },
       lesson: {
         get: lessonGet,
@@ -225,6 +230,12 @@ beforeEach(() => {
       data: { courseId: COURSE_ID, instructorId: INSTRUCTOR_SUB },
     }),
   });
+  // The module above the lesson; not archived unless a test says so.
+  moduleGet.mockReturnValue({
+    go: vi.fn().mockResolvedValue({
+      data: { moduleId: MODULE_ID, visibility: 'visible' },
+    }),
+  });
   lessonGet.mockReturnValue({
     go: vi.fn().mockResolvedValue({ data: lesson }),
   });
@@ -293,6 +304,27 @@ describe('createContentItemVideoUploadUrl', () => {
     ).rejects.toMatchObject({
       code: 'PRECONDITION_FAILED',
       message: 'Restore the lesson before adding content to it',
+    });
+    expect(getSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('refuses a lesson under an archived module without minting an upload URL', async () => {
+    moduleGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: { moduleId: MODULE_ID, archivedAt: '2024-02-01T00:00:00.000Z' },
+      }),
+    });
+
+    await expect(
+      callAs().createContentItemVideoUploadUrl({
+        courseId: COURSE_ID,
+        moduleId: MODULE_ID,
+        lessonId: LESSON_ID,
+        fileName: 'intro.mp4',
+      }),
+    ).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the module first',
     });
     expect(getSignedUrl).not.toHaveBeenCalled();
   });
@@ -545,6 +577,34 @@ describe('createContentItemVideo', () => {
       );
     },
   );
+
+  it('throws NOT_FOUND when the course does not exist', async () => {
+    courseGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({ data: null }),
+    });
+
+    await expect(
+      callAs().createContentItemVideo(validInput),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(contentItemCreate).not.toHaveBeenCalled();
+  });
+
+  it('refuses to add a video under an archived module, before checking the upload', async () => {
+    moduleGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: { moduleId: MODULE_ID, archivedAt: '2024-02-01T00:00:00.000Z' },
+      }),
+    });
+
+    await expect(
+      callAs().createContentItemVideo(validInput),
+    ).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the module first',
+    });
+    expect(getVideoUploadETag).not.toHaveBeenCalled();
+    expect(contentItemCreate).not.toHaveBeenCalled();
+  });
 
   it('refuses to add a video to an archived lesson, before checking the upload', async () => {
     lessonGet.mockReturnValue({
@@ -857,6 +917,23 @@ describe('updateContentItemVideo', () => {
       code: 'NOT_FOUND',
     });
     expect(contentItemPatch).not.toHaveBeenCalled();
+  });
+
+  it('refuses to edit a video in an archived lesson before any side effect', async () => {
+    lessonGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: { ...lesson, archivedAt: '2024-02-01T00:00:00.000Z' },
+      }),
+    });
+
+    await expect(
+      callAs().updateContentItemVideo({ ...input, title: 'New title' }),
+    ).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the lesson first',
+    });
+    expect(contentItemPatch).not.toHaveBeenCalled();
+    expect(submitTranscodeJob).not.toHaveBeenCalled();
   });
 
   // Invariant: an archived item must be restored before it's edited --

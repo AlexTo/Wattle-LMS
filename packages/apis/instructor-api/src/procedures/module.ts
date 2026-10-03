@@ -93,9 +93,9 @@ const hardDeleteModule = async (
   // cascade.
   if (1 + lessons.length + contentItems.length > MAX_TRANSACTION_ITEMS) {
     throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
+      code: 'PRECONDITION_FAILED',
       message:
-        'Module has too many lessons or content items to delete in a single operation; delete some first',
+        'This module has too many lessons and content items to delete in one operation (the limit is 100 records). Delete some of its lessons first, then the module.',
     });
   }
 
@@ -269,8 +269,10 @@ export const deleteModule = courseProcedure
 
 // Publishes the module along with every hidden lesson and content item under
 // it in one transaction, so students see a newly built module complete
-// rather than piece by piece. Archived descendants, and content items under
-// an archived lesson, are left as they are.
+// rather than piece by piece. That includes descendants that were hidden on
+// purpose, which have to be hidden again afterwards if they should stay
+// hidden. Archived descendants, and content items under an archived lesson,
+// are left as they are.
 export const publishModule = courseProcedure
   .input(PublishModuleInputSchema)
   .output(PublishModuleOutputSchema)
@@ -312,9 +314,9 @@ export const publishModule = courseProcedure
     }
     if (writeCount > MAX_TRANSACTION_ITEMS) {
       throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
+        code: 'PRECONDITION_FAILED',
         message:
-          'Module has too many hidden lessons or content items to publish in a single operation; publish some lessons first',
+          'This module has too many hidden lessons and content items to publish in one operation (the limit is 100 records). Publish some of its lessons first, then the module.',
       });
     }
 
@@ -356,7 +358,10 @@ export const publishModule = courseProcedure
   });
 
 // Hides only the module itself; its lessons and content items keep their own
-// visibility, so publishing the module again shows them as they were.
+// visibility. Students stop seeing all of them, since a record is only shown
+// under visible ancestors. Publishing the module again also publishes every
+// hidden lesson and item under it (see publishModule), so one meant to stay
+// hidden has to be hidden again afterwards.
 export const hideModule = courseProcedure
   .input(HideModuleInputSchema)
   .output(HideModuleOutputSchema)
