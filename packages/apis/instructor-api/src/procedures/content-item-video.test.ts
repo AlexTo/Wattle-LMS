@@ -479,6 +479,42 @@ describe('createContentItemVideo', () => {
     expect(contentItemCreate).not.toHaveBeenCalled();
   });
 
+  // Invariant: same as every other new record -- visible straight away in a
+  // draft course, hidden until published in any other course.
+  it.each([
+    ['draft', 'visible'],
+    ['published', 'hidden'],
+    ['archived', 'hidden'],
+  ] as const)(
+    'in a %s course, creates the video record as %s',
+    async (status, visibility) => {
+      courseGet.mockReturnValue({
+        go: vi.fn().mockResolvedValue({ data: { status } }),
+      });
+
+      await callAs().createContentItemVideo(validInput);
+
+      expect(contentItemCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility }),
+      );
+    },
+  );
+
+  it('refuses to add a video to an archived lesson, before checking the upload', async () => {
+    lessonGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: { ...lesson, archivedAt: '2024-02-01T00:00:00.000Z' },
+      }),
+    });
+
+    await expect(
+      callAs().createContentItemVideo(validInput),
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+    expect(getVideoUploadETag).not.toHaveBeenCalled();
+    expect(contentItemCreate).not.toHaveBeenCalled();
+    expect(submitTranscodeJob).not.toHaveBeenCalled();
+  });
+
   it('starts at order 1 and sets status pending for the first content item in a lesson', async () => {
     await callAs().createContentItemVideo(validInput);
 
