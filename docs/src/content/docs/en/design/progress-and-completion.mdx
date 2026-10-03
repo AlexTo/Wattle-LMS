@@ -29,7 +29,7 @@ core-api writes `itemCompletion` records and quiz attempts. It never writes `pro
 |---|---|
 | Text | Scrolled past, or marked done |
 | Video | Watched to near the end |
-| Quiz | Passed, or all attempts used (open question, below) |
+| Quiz | Passed, or all attempts used |
 
 ## Lesson and course completion
 
@@ -62,7 +62,7 @@ For each affected (student, course):
 3. Write each lesson's `progress`. `completed` is only ever set, never cleared.
 4. Write the enrolment's `progressPercent`. At 100%, set `status: 'completed'` and `completedAt`, conditioned on the enrolment not already being `completed`.
 
-Enrolments share the course's partition key, so listing the students to recalculate is one query. A curriculum change costs one query per enrolled student, which is fine at LMS course sizes; very large courses could later split the work across invocations.
+Enrolments share the course's partition key, so listing the students to recalculate is one query. A curriculum change costs one query per enrolled student.
 
 ### Idempotency
 
@@ -75,18 +75,3 @@ Every run recomputes from scratch, so a duplicate stream record or a burst of in
 - Stored values lag the triggering write by the stream delay, typically under a second to a few seconds.
 
 See <Link path="design/live-course-editing">Live course editing</Link> for which instructor actions trigger a recalculation.
-
-## Decisions
-
-| Decision | Why |
-|---|---|
-| Progress and completion are written only by a server-side Lambda | A client-side trigger (e.g. recording completion when the student next opens the course) never fires for a student who has finished and doesn't return |
-| Triggered by DynamoDB Streams, not a message sent by instructor-api after its write | The stream is emitted by the write itself, so a crash between writing and notifying can't lose an update |
-| Recompute from scratch, never increment | Stays correct through adds, removals, hides and restores, and makes duplicate events harmless |
-| Course completion is permanent | Fair to students; certificates stay valid when content is added later |
-| Lesson completion is permanent | Consistent with course completion |
-| Completion is item-level (`itemCompletion`), not only per lesson | "A lesson is done when all its items are done" needs a per-item record |
-
-## Open questions
-
-- Is a quiz item complete once passed **or** once all attempts are used? Recommended: yes, otherwise a student who fails every attempt can never complete the lesson.

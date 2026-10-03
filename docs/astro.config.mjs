@@ -6,6 +6,7 @@ import { defineConfig } from 'astro/config';
 
 import starlight from '@astrojs/starlight';
 import starlightBlog from 'starlight-blog';
+import astroD2 from 'astro-d2';
 
 const basePath = process.env.DOCS_BASE_PATH || '/discava';
 
@@ -73,6 +74,14 @@ export default defineConfig({
           },
         }),
       ],
+    }),
+    // Renders ```d2 code blocks to static SVG at build time. useD2js runs D2
+    // as WASM, so neither local builds nor CI need a d2 binary installed.
+    astroD2({
+      sketch: true,
+      experimental: {
+        useD2js: true,
+      },
     }),
   ],
 });

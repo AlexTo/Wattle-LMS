@@ -9,7 +9,87 @@ import Link from '@components/link.astro';
 
 Instructors keep editing a course after it's published. This design makes those edits safe for students who are already enrolled: nothing half-built becomes visible, nothing a student has done is lost, and progress stays correct.
 
-In a draft course every change applies immediately and delete is a hard delete: a draft has never been open to students, so nothing there can affect them. Everything below applies to any course that isn't a draft, meaning published courses and courses archived after publishing, since both can have students with progress and attempts.
+In a draft course every change applies immediately and delete is a hard delete: a draft has never been open to students, so nothing there can affect them. Everything below applies to published and archived courses, since both can have students with progress and attempts.
+
+## Workflow
+
+### Lifecycle of a module, lesson or content item
+
+```d2 title="Lifecycle of a module, lesson or content item: the course's status decides where a new record starts and what delete does; then publish, hide, archive, restore and delete"
+direction: down
+
+new_draft: "Created in a\nDraft course" {shape: oval}
+new_live: "Created in a Published\nor Archived course" {shape: oval}
+
+live: "Not archived" {
+  visible: Visible
+  hidden: Hidden
+
+  hidden -> visible: publish
+  visible -> hidden: hide
+}
+
+archived: "Archived\n(frozen until restored,\nwith everything under it)" {
+  style.stroke-dash: 3
+}
+
+deleted: Deleted permanently {shape: oval}
+
+new_draft -> live.visible
+new_live -> live.hidden
+live -> archived: "delete\n(course not Draft)"
+archived -> live: restore
+live -> deleted: "delete\n(course Draft)"
+archived -> deleted: "delete permanently\n(see below)"
+```
+
+- The diagram follows one module, lesson or content item. The course's own status (Draft, Published or Archived) is a separate thing, and none of these actions change it. It only decides where a new record starts, and whether delete archives the record or removes it.
+- Students see a record only while it's **Visible** and every ancestor is too (see [Effective visibility](#effective-visibility)).
+- Publishing a module or lesson also publishes every hidden, unarchived record under it, including ones that were hidden on purpose. Hiding, archiving and restoring change only the record itself.
+- An archived record keeps its visibility, so restoring it brings it back **Visible** or **Hidden**, as it was. It can only be restored once its parent module or lesson isn't archived.
+- An archived record, and everything under it, is frozen: nothing in it can be published, hidden or edited, and nothing can be added to it.
+- Outside a draft course, every change to what students can see triggers a progress recalculation for everyone enrolled.
+
+### Permanent delete
+
+```d2 title="Checks a permanent delete goes through before anything is removed, for a module or lesson and for a single content item"
+direction: down
+
+start: "Delete permanently\n(from the Archived view)" {shape: oval}
+is_archived: "Is the record itself\narchived?" {shape: diamond}
+kind: "Module or lesson,\nor content item?" {shape: diamond}
+
+activity: "Student activity on any\nitem under it?\n(every page read)" {shape: diamond}
+limit: "More than 100 records\nincluding everything\nunder it?" {shape: diamond}
+transaction: "One transaction: each item\nconditioned on its checked\nupdatedAt, the parent on\nits checked archivedAt"
+
+item_activity: "Student activity\non the item?" {shape: diamond}
+item_delete: "One delete, conditioned on\nno student activity and the\nitem still being archived"
+
+changed: "Did a condition\nfail?" {shape: diamond}
+
+refused_archive: "PRECONDITION_FAILED:\narchive it first"
+refused_activity: "PRECONDITION_FAILED:\nit can stay archived,\nbut is never deleted"
+refused_limit: "PRECONDITION_FAILED:\ndelete some of its lessons\n(or content items) first,\nthen retry"
+conflict: "CONFLICT:\nnothing deleted"
+done: "Deleted; for videos,\ntranscodes canceled and\nS3 objects removed" {shape: oval}
+
+start -> is_archived
+is_archived -> refused_archive: no
+is_archived -> kind: yes
+kind -> activity: module or lesson
+kind -> item_activity: content item
+activity -> refused_activity: yes
+activity -> limit: no
+limit -> refused_limit: yes
+limit -> transaction: no
+item_activity -> refused_activity: yes
+item_activity -> item_delete: no
+transaction -> changed
+item_delete -> changed
+changed -> conflict: yes
+changed -> done: no
+```
 
 ## Data model
 
@@ -50,7 +130,7 @@ Instructors edit through instructor-api's `course.view`, which returns the whole
 | **Add content item** | Nothing until published, and only once its lesson and module are published too | Once published, `progressPercent` drops. If its lesson was already completed, the lesson stays completed and the item shows as **New** | All enrolled students, on publish |
 | **Remove content item** | Archived: disappears on next load. Submitting a quiz in it or marking it complete is rejected with "no longer available" | Kept, not counted. If it was a student's only unfinished item, the lesson (and possibly the course) becomes completed. Restorable | All enrolled students |
 | **Edit content item**: title, description, text body | Applies immediately | Completion kept | No one |
-| **Edit content item**: replace video | The video replace/re-transcode flow. What students see while it re-transcodes is an open question (below) | Completion kept | No one |
+| **Edit content item**: replace video | Goes through the video replace and re-transcode flow | Completion kept | No one |
 | **Edit content item**: quiz | See <Link path="design/quizzes">Quizzes</Link>: answer-key-only edits are invisible; question edits make an in-progress submit return `CONFLICT` | Attempts, best scores and passes kept, never regraded | No one |
 | **Hide** (any level) | Disappears like a removal, but isn't in the Archived view | Kept, not counted; counts again when shown | All enrolled students |
 | **Reorder** (any level) | Applies immediately | No effect | No one |
@@ -59,16 +139,18 @@ Instructors edit through instructor-api's `course.view`, which returns the whole
 
 ## Publishing
 
-Publishing a module or lesson sets it and all of its hidden descendants to `visible` in **one transaction**, so students see a new lesson with all its items at once rather than piece by piece. Archived descendants, and content items under an archived lesson, are left as they are. Items the instructor wants kept back can be hidden individually afterwards.
+Publishing a module or lesson sets it and all of its hidden descendants to `visible` in **one transaction**, so students see a new lesson with all its items at once rather than piece by piece. Archived descendants, and content items under an archived lesson, are left as they are.
 
-Hiding is not cascaded: it changes only the record itself, and its children keep their own `visibility`. Publishing the parent again shows them as they were.
+That includes descendants that were hidden on purpose: publishing a module or lesson always publishes everything hidden under it. To keep a lesson or item back, hide it again after publishing its parent.
+
+Hiding is not cascaded: it changes only the record itself, and its children keep their own `visibility`. Students stop seeing the children anyway, since a record is only shown under visible ancestors.
 
 ## Removing (archiving)
 
-Outside a draft course, delete always archives, and the instructor portal labels the action **Archive** rather than **Delete**. The confirmation dialog shows the impact from `studentActivityCount`:
+Outside a draft course, delete always archives, and the instructor portal labels the action **Archive** (in a draft course it's **Delete** for modules and lessons, and **Remove** for content items). The confirmation dialog shows the impact from `studentActivityCount`:
 
 - a content item: "12 students have attempted this quiz. Their results will be kept."
-- a module or lesson: the sum over the items underneath, worded "about N students", since a student active in several items is counted once per item. An exact count would need an extra per-student-per-lesson record, which isn't worth it for a warning.
+- a module or lesson: the sum over the items underneath, worded "about N students", since a student active in several items is counted once per item.
 
 ### Removed while a student is learning it
 
@@ -84,11 +166,14 @@ The archive triggers a progress recalculation for every enrolled student, so the
 
 ### What can't be done to an archived record
 
-An archived record stays exactly as it was archived until it's restored, so a restore brings back what students saw:
+An archived record, and everything under it, stays exactly as it was archived until it's restored, so a restore brings back what students saw. All of these are refused with `PRECONDITION_FAILED`:
 
-- It can't be published, hidden or edited. Each is refused with "Restore the … first".
-- Replacing an archived video's file is an edit, so no upload URL is issued for it.
-- Nothing can be added under an archived parent: no new lessons in an archived module, and no new content, or upload URL, in an archived lesson.
+- Publishing, hiding or editing the archived record itself: "Restore the module (lesson, content item) before publishing (hiding, editing) it".
+- Publishing, hiding or editing anything under it, e.g. a lesson in an archived module or a content item in an archived lesson: "Restore the module first" or "Restore the lesson first". The module is named first when both are archived.
+- Adding anything under it: no new lessons in an archived module, and no new content in an archived module or lesson.
+- Uploading a video file: no upload URL is issued for an archived module or lesson, or to replace the file of an archived content item.
+
+Records under an archived module or lesson can still be archived themselves, and then deleted permanently.
 
 A video archived while it's still transcoding keeps transcoding. When the job finishes, the item is marked `ready` (or `failed`) without touching `archivedAt` or `visibility`, so it plays if it's restored and stays hidden until then.
 
@@ -97,49 +182,28 @@ A video archived while it's still transcoding keeps transcoding. When the job fi
 The instructor course page has an **Archived** section, grouped by module and lesson, with **Restore** on every row.
 
 - Restoring clears `archivedAt` and returns the record to its original `order`.
-- A content item can only be restored if its lesson and module are active. Otherwise the view says "Restore the lesson first", or offers to restore the parents too.
+- A lesson can only be restored if its module isn't archived, and a content item only if neither its module nor its lesson is. Otherwise it's refused with "Restore the module first" or "Restore the lesson first", naming the module first when both are archived. The view offers to restore the parents too.
 - A restored quiz keeps its version, attempts and best scores.
 - Restoring triggers a progress recalculation, and everything counts again as before.
 
 ## Permanent delete
 
-Offered only from the Archived view, and only when `studentActivityCount` is 0 for the item, or for every item under a lesson or module. Anything a student has used can be archived but never permanently deleted.
+Offered only from the Archived view, for a record that is itself archived (one under an archived parent must be archived first), and only when `studentActivityCount` is 0 for the item, or for every item under a lesson or module. Anything a student has used can be archived but never permanently deleted.
 
-The checks and the delete are separate calls, so the delete itself carries the checks as conditions:
+The checks and the delete are separate calls, so the delete itself carries conditions:
 
-- each content item under a module or lesson, on the `updatedAt` from the snapshot that was checked (a student's first activity bumps it);
-- the module or lesson itself, on the `archivedAt` that was checked, so a restore landing in between cancels the delete;
-- a single content item, on `studentActivityCount = 0` and the item still being archived.
+- **A module or lesson** is deleted with everything under it in one transaction. Each content item's delete is conditioned on the `updatedAt` that was checked (a student's first activity bumps it), and the module or lesson's own delete on the `archivedAt` that was checked, so a restore landing in between cancels it. Lessons under a module are deleted without a condition of their own.
+- **A single content item** is one delete, conditioned on `studentActivityCount = 0` and the item still being archived.
 
-If anything changed in between, the delete is refused with a conflict and nothing is removed.
+If a condition fails, the delete is refused with `CONFLICT` and nothing is removed. Any other failure of the transaction is reported as `INTERNAL_SERVER_ERROR`, also with nothing removed.
 
 ## Limits and repeated requests
 
-- **Whole sets only.** Publishing a module or lesson and permanently deleting one read every page of descendants, not just the first 1 MB, so nothing is left unpublished or orphaned.
-- **100-item transactions.** These operations must be atomic, and a DynamoDB transaction holds at most 100 items. If one would touch more, it's refused rather than split, so it never applies to only part of a module or lesson. Publishing individual lessons first keeps a large module under the limit.
-- **Repeats write nothing.** Archiving something already archived keeps its original `archivedAt`. Publishing what's visible, hiding what's hidden and restoring what isn't archived all return the record unchanged. A retried request, e.g. after a client-side timeout, is harmless.
+- **Whole sets only.** Publishing a module or lesson and deleting one (in a draft course or permanently) read every page of descendants, not just the first 1 MB, so nothing is left unpublished or orphaned. Both `course.view`s read every page of the curriculum too.
+- **100-item transactions.** Publishing a module or lesson, and deleting one (in a draft course or permanently), happens in a single all-or-nothing DynamoDB transaction, which holds at most 100 records. A larger module or lesson can still be published or deleted, just in steps:
+  - publish some of its lessons (or content items) first, then the module (or lesson);
+  - in a draft course, delete some of its lessons (or content items) first, then the module (or lesson);
+  - otherwise, archive some of its lessons (or content items) and delete them permanently first, then the module (or lesson).
 
-## Out of scope
-
-**Moving a lesson to another module.** If it's added, note that lesson and content item sort keys contain `moduleId`, so a move means re-creating the lesson and its items under the new module in one transaction, **keeping the same ids** so `progress`, `itemCompletion` and `quizAttempt` still match.
-
-## Decisions
-
-| Decision | Why |
-|---|---|
-| Edits stay allowed on published courses | Blocking them is too restrictive; full versioning of the whole course (draft copy + publish) is too heavy for the problem |
-| Modules, lessons and items all have `visibility`, and new ones start hidden | Visibility only on items would expose empty lessons and modules while they're being built |
-| New content needs an explicit **Publish**; it never appears automatically | Showing a lesson as soon as its first item is visible would expose it half-built |
-| Publishing a parent cascades to hidden children in one transaction | A new lesson appears complete, all at once |
-| Outside a draft course, delete always archives, and archives are restorable | Students' results must survive a mistaken delete; instructors need an undo |
-| `archivedAt` only on the archived record, not cascaded | Avoids DynamoDB's 100-item transaction limit, and a restore brings back exactly what was there |
-| Archived records must be restored before they're edited, and nothing can be added or uploaded under them | Keeps an archived record exactly as it was archived, so a restore brings back what students saw; refusing the upload URL up front means no file is uploaded only to be rejected |
-| Permanent delete only when no student has used the item | Student data is never destroyed by curriculum edits |
-| `studentActivityCount` counter rather than a boolean | Powers the impact warning as well as the permanent-delete guard |
-| The visibility rule lives in `@discava/core-table` | It interprets core-table's own attributes, much like a soft-delete filter, and both core-api and the events Lambda already depend on core-table, so there is exactly one copy of the rule |
-| Operations over 100 records are refused, not split | A split publish or delete could stop partway, leaving a module half-published or half-deleted |
-| Repeating an operation writes nothing | Retries after timeouts are safe, and re-archiving doesn't move `archivedAt` |
-
-## Open questions
-
-- What students see while a replaced video re-transcodes. Recommended: keep playing the previous rendition until the new one is ready, rather than showing "processing".
+  When an operation would go over the limit, it's refused with `PRECONDITION_FAILED` and a message naming that next step. It's never split into several transactions behind the scenes: if one of them failed, part of the module would already be gone, leaving lessons or items with no parent.
+- **Repeats write nothing.** Archiving something already archived keeps its original `archivedAt`. Publishing a content item that's visible, or a module or lesson with nothing hidden in or under it, hiding what's hidden, and restoring what isn't archived all return the record unchanged. A retried request, e.g. after a client-side timeout, is harmless. The exception is a delete that removes the record (in a draft course, or permanently): retrying it returns `NOT_FOUND`, since the record is already gone.
