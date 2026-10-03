@@ -607,12 +607,14 @@ describe('publishModule', () => {
         op: 'patch',
         key: lessonKey,
         set: { visibility: 'visible' },
+        condition: NOT_ARCHIVED,
       },
       {
         entity: 'contentItem',
         op: 'patch',
         key: itemKey('item-hidden'),
         set: { visibility: 'visible' },
+        condition: NOT_ARCHIVED,
       },
     ]);
     expect(result).toEqual(module);
@@ -678,6 +680,7 @@ describe('publishLesson', () => {
         op: 'patch',
         key: itemKey('item-hidden'),
         set: { visibility: 'visible' },
+        condition: NOT_ARCHIVED,
       },
     ]);
     expect(result).toEqual(lesson);
@@ -1059,11 +1062,19 @@ describe('descendants spanning more than one query page', () => {
         key: moduleKey,
         condition: NOT_ARCHIVED,
       },
+      // The item's lesson isn't being published, so it gets its own check.
+      {
+        entity: 'lesson',
+        op: 'check',
+        key: lessonKey,
+        condition: NOT_ARCHIVED,
+      },
       {
         entity: 'contentItem',
         op: 'patch',
         key: itemKey('item-on-page-2'),
         set: { visibility: 'visible' },
+        condition: NOT_ARCHIVED,
       },
     ]);
   });
@@ -1091,6 +1102,7 @@ describe('descendants spanning more than one query page', () => {
         op: 'patch',
         key: itemKey('item-on-page-2'),
         set: { visibility: 'visible' },
+        condition: NOT_ARCHIVED,
       },
     ]);
   });
@@ -1346,9 +1358,10 @@ describe('DynamoDB 100-item transaction limit', () => {
     expect(transactionWrite).not.toHaveBeenCalled();
   });
 
+  // The module, a check on the items' (unpublished) lesson, and 98 items.
   it('publishModule publishes exactly 100 records in one transaction', async () => {
     moduleGet.mockReturnValue(resolves({ ...module, visibility: 'hidden' }));
-    contentItemQueryPrimary.mockReturnValue(resolves(hiddenItems(99)));
+    contentItemQueryPrimary.mockReturnValue(resolves(hiddenItems(98)));
 
     await callAs().publishModule(moduleKey);
 
@@ -1672,6 +1685,7 @@ describe('lessons spanning more than one query page', () => {
         op: 'patch',
         key: { ...moduleKey, lessonId: 'lesson-page-2' },
         set: { visibility: 'visible' },
+        condition: NOT_ARCHIVED,
       },
     ]);
   });
@@ -1996,4 +2010,140 @@ describe('parent archived between the checks and the write', () => {
       callAs().createLesson({ ...moduleKey, title: 'New lesson' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
+});
+
+describe('a descendant archived while a publish is in flight', () => {
+  // Invariant: a publish never changes a lesson or item archived after its
+  // query -- restoring it later would otherwise bring it back visible rather
+  // than as it was archived. Every lesson and item patch in the cascade (and,
+  // in publishModule, every item's lesson) is conditioned on not being
+  // archived, so DynamoDB refuses the whole transaction instead.
+  const refusedAt = (index: number, length: number) => ({
+    canceled: true,
+    data: Array.from({ length }, (_, i) => ({
+      code: i === index ? 'ConditionalCheckFailed' : 'None',
+    })),
+  });
+
+  it('publishLesson conditions every item patch on the item not being archived', async () => {
+    contentItemQueryPrimary.mockReturnValue(
+      resolves([
+        textItem('item-a', { visibility: 'hidden' }),
+        textItem('item-b', { visibility: 'hidden' }),
+      ]),
+    );
+
+    await callAs().publishLesson(lessonKey);
+
+    const itemWrites = transactionWrites.filter(
+      ({ entity }) => entity === 'contentItem',
+    );
+    expect(itemWrites).toHaveLength(2);
+    for (const write of itemWrites) {
+      expect(write.condition).toBe(NOT_ARCHIVED);
+    }
+  });
+
+  it('publishLesson is refused with CONFLICT when an item is archived in the meantime', async () => {
+    contentItemQueryPrimary.mockReturnValue(
+      resolves([textItem('item-a', { visibility: 'hidden' })]),
+    );
+    // [module check, lesson check, item patch]: the item's condition failed.
+    transactionGo.mockResolvedValue(refusedAt(2, 3));
+
+    await expect(callAs().publishLesson(lessonKey)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+  });
+
+  it('publishModule conditions every lesson and item patch, and checks the lesson of every item it publishes', async () => {
+    moduleGet.mockReturnValue(resolves({ ...module, visibility: 'hidden' }));
+    lessonQueryPrimary.mockReturnValue(
+      resolves([
+        { ...lesson, lessonId: 'lesson-hidden', visibility: 'hidden' },
+        lesson,
+      ]),
+    );
+    contentItemQueryPrimary.mockReturnValue(
+      resolves([
+        textItem('item-in-hidden-lesson', {
+          lessonId: 'lesson-hidden',
+          visibility: 'hidden',
+        }),
+        textItem('item-in-visible-lesson', { visibility: 'hidden' }),
+      ]),
+    );
+
+    await callAs().publishModule(moduleKey);
+
+    expect(transactionWrites).toEqual([
+      {
+        entity: 'module',
+        op: 'patch',
+        key: moduleKey,
+        set: { visibility: 'visible' },
+        condition: NOT_ARCHIVED,
+      },
+      {
+        entity: 'lesson',
+        op: 'patch',
+        key: { ...moduleKey, lessonId: 'lesson-hidden' },
+        set: { visibility: 'visible' },
+        condition: NOT_ARCHIVED,
+      },
+      // The visible lesson isn't published, but its item is: checked.
+      {
+        entity: 'lesson',
+        op: 'check',
+        key: lessonKey,
+        condition: NOT_ARCHIVED,
+      },
+      {
+        entity: 'contentItem',
+        op: 'patch',
+        key: {
+          ...moduleKey,
+          lessonId: 'lesson-hidden',
+          contentItemId: 'item-in-hidden-lesson',
+        },
+        set: { visibility: 'visible' },
+        condition: NOT_ARCHIVED,
+      },
+      {
+        entity: 'contentItem',
+        op: 'patch',
+        key: itemKey('item-in-visible-lesson'),
+        set: { visibility: 'visible' },
+        condition: NOT_ARCHIVED,
+      },
+    ]);
+  });
+
+  // The transaction is [module check, lesson patch or check, item patch];
+  // the module is visible, so it's only checked.
+  it.each([
+    ['a lesson it publishes', 'hidden', 1],
+    ["an item's lesson it doesn't publish", 'visible', 1],
+    ['an item it publishes', 'visible', 2],
+  ] as const)(
+    'publishModule is refused with CONFLICT when %s is archived in the meantime',
+    async (_what, lessonVisibility, index) => {
+      lessonQueryPrimary.mockReturnValue(
+        resolves([{ ...lesson, visibility: lessonVisibility }]),
+      );
+      contentItemQueryPrimary.mockReturnValue(
+        resolves([textItem('item-a', { visibility: 'hidden' })]),
+      );
+      transactionGo.mockResolvedValue(refusedAt(index, 3));
+
+      await expect(callAs().publishModule(moduleKey)).rejects.toMatchObject({
+        code: 'CONFLICT',
+      });
+      expect(transactionWrites[index]).toMatchObject({
+        entity: index === 1 ? 'lesson' : 'contentItem',
+        op: index === 1 && lessonVisibility === 'visible' ? 'check' : 'patch',
+        condition: NOT_ARCHIVED,
+      });
+    },
+  );
 });

@@ -362,7 +362,7 @@ export const publishLesson = courseProcedure
 
     // Conditioned on the module still being active and the lesson still not
     // archived, so an archive landing after the checks above can't be
-    // published past. Any other cancellation -- most likely a content item
+    // published past. Any other cancellation -- a content item archived or
     // deleted between the query and the transaction (patch requires the
     // record to exist) -- is a CONFLICT to retry.
     await writeUnderActiveAncestors(
@@ -379,10 +379,14 @@ export const publishLesson = courseProcedure
               .check(key)
               .where((attr, op) => op.notExists(attr.archivedAt))
               .commit(),
+        // Each item is conditioned on still not being archived, so one
+        // archived after the query above is never published: the whole
+        // publish is refused instead, and a retry re-queries and skips it.
         ...contentItemsToPublish.map(({ contentItemId }) =>
           entities.contentItem
             .patch({ ...key, contentItemId })
             .set({ visibility: 'visible' })
+            .where((attr, op) => op.notExists(attr.archivedAt))
             .commit(),
         ),
       ],

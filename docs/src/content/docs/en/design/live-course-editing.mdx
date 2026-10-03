@@ -139,7 +139,7 @@ Instructors edit through instructor-api's `course.view`, which returns the whole
 
 ## Publishing
 
-Publishing a module or lesson sets it and all of its hidden descendants to `visible` in **one transaction**, so students see a new lesson with all its items at once rather than piece by piece. Archived descendants, and content items under an archived lesson, are left as they are.
+Publishing a module or lesson sets it and all of its hidden descendants to `visible` in **one transaction**, so students see a new lesson with all its items at once rather than piece by piece. Archived descendants, and content items under an archived lesson, are left as they are. That holds even if one is archived while the publish is in flight: every lesson and item it changes (and the lesson of every item it publishes) must still be unarchived when the transaction commits, otherwise nothing is published and the request returns `CONFLICT`. Retrying re-reads the module or lesson and skips the newly archived record.
 
 That includes descendants that were hidden on purpose: publishing a module or lesson always publishes everything hidden under it. To keep a lesson or item back, hide it again after publishing its parent.
 

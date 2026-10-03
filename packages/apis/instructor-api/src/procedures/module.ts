@@ -341,6 +341,15 @@ export const publishModule = courseProcedure
         !archivedLessonIds.has(item.lessonId),
     );
     const publishModuleItself = existing.visibility === 'hidden';
+    // Lessons that aren't being published themselves but have items that
+    // are: each gets a check that it's still not archived, so an item can't
+    // be published under a lesson archived in the meantime.
+    const publishedLessonIds = new Set(
+      lessonsToPublish.map(({ lessonId }) => lessonId),
+    );
+    const lessonIdsToCheck = [
+      ...new Set(contentItemsToPublish.map(({ lessonId }) => lessonId)),
+    ].filter((lessonId) => !publishedLessonIds.has(lessonId));
 
     if (
       !publishModuleItself &&
@@ -349,9 +358,13 @@ export const publishModule = courseProcedure
     ) {
       return existing;
     }
-    // The transaction always carries a write or check on the module itself.
+    // The transaction always carries a write or check on the module itself,
+    // plus the lesson checks above.
     if (
-      1 + lessonsToPublish.length + contentItemsToPublish.length >
+      1 +
+        lessonsToPublish.length +
+        lessonIdsToCheck.length +
+        contentItemsToPublish.length >
       MAX_TRANSACTION_ITEMS
     ) {
       throw new TRPCError({
@@ -362,7 +375,11 @@ export const publishModule = courseProcedure
     }
 
     // The module goes first, conditioned on still not being archived, so an
-    // archive landing after the check above can't be published past.
+    // archive landing after the check above can't be published past. Every
+    // lesson and item is likewise conditioned on still not being archived
+    // (and every item's lesson too), so one archived after the query above is
+    // never published: the whole publish is refused instead, and a retry
+    // re-queries and skips it.
     const { canceled, data: transactionResults } = await coreTable.transaction
       .write((entities) => [
         publishModuleItself
@@ -379,12 +396,20 @@ export const publishModule = courseProcedure
           entities.lesson
             .patch({ courseId, moduleId, lessonId })
             .set({ visibility: 'visible' })
+            .where((attr, op) => op.notExists(attr.archivedAt))
+            .commit(),
+        ),
+        ...lessonIdsToCheck.map((lessonId) =>
+          entities.lesson
+            .check({ courseId, moduleId, lessonId })
+            .where((attr, op) => op.notExists(attr.archivedAt))
             .commit(),
         ),
         ...contentItemsToPublish.map(({ lessonId, contentItemId }) =>
           entities.contentItem
             .patch({ courseId, moduleId, lessonId, contentItemId })
             .set({ visibility: 'visible' })
+            .where((attr, op) => op.notExists(attr.archivedAt))
             .commit(),
         ),
       ])
@@ -394,8 +419,8 @@ export const publishModule = courseProcedure
         const module = await getModuleOrThrow(coreTable, courseId, moduleId);
         requireNotArchived(module, 'Restore the module before publishing it');
       }
-      // Otherwise most likely a lesson or content item deleted between the
-      // query and the transaction (patch requires the record to exist).
+      // Otherwise a lesson or content item was archived (or deleted -- patch
+      // requires the record to exist) between the query and the transaction.
       throw new TRPCError({
         code: 'CONFLICT',
         message: 'The module changed while it was being published; retry',
