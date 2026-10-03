@@ -13,7 +13,11 @@
       "executor": "nx:run-commands",
       "cache": false,
       "options": {
-        "command": "docker run --rm -v \"./\":/src:ro public.ecr.aws/aquasecurity/trivy:0.72.0 fs /src --scanners vuln,secret --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /src/.trivyignore --skip-dirs '**/node_modules' --skip-dirs dist --skip-dirs tmp --skip-dirs .git --exit-code 1 --no-progress --skip-version-check"
+        "commands": [
+          "docker run --rm -v \"./\":/src:ro public.ecr.aws/aquasecurity/trivy:0.72.0 fs /src --scanners vuln --severity CRITICAL --ignore-unfixed --ignorefile /src/.trivyignore --skip-dirs '**/node_modules' --skip-dirs dist --skip-dirs tmp --skip-dirs .git --exit-code 1 --no-progress --skip-version-check",
+          "docker run --rm -v \"./\":/src:ro public.ecr.aws/aquasecurity/trivy:0.72.0 fs /src --scanners secret --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /src/.trivyignore --skip-dirs '**/node_modules' --skip-dirs dist --skip-dirs tmp --skip-dirs .git --exit-code 1 --no-progress --skip-version-check"
+        ],
+        "parallel": false
       }
     }
   }
