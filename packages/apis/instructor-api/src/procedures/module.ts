@@ -99,14 +99,15 @@ const hardDeleteModule = async (
     });
   }
 
-  // Content item deletes are conditioned on updatedAt (bumped by every
-  // write, video or text -- see the contentItem entity's `watch: '*'` on
-  // that attribute) still matching what was just queried above -- see the
-  // equivalent comment in lesson.ts's hardDeleteLesson for why: a content
-  // item changing between the query and this transaction, most notably a
-  // transcode completing and publishing its HLS output or a student's first
-  // activity bumping studentActivityCount, would otherwise still be deleted
-  // while cleanup below acted on a stale snapshot of it.
+  // Each content item delete is conditioned on two things -- see the
+  // equivalent comment in lesson.ts's hardDeleteLesson for why:
+  // - updatedAt (bumped by every write -- see the contentItem entity's
+  //   `watch: '*'`) still matching the queried snapshot, so a transcode
+  //   completing in between isn't cleaned up from stale data;
+  // - studentActivityCount = 0, checked directly rather than through
+  //   updatedAt: a millisecond-precision timestamp can come out the same
+  //   for a write in the same millisecond (or from another machine's
+  //   clock), and student data must never be deleted.
   const { canceled, data: transactionResults } = await coreTable.transaction
     .write((entities) => [
       checkedArchivedAt === undefined
@@ -126,7 +127,10 @@ const hardDeleteModule = async (
             lessonId: item.lessonId,
             contentItemId: item.contentItemId,
           })
-          .where((attr, op) => op.eq(attr.updatedAt, item.updatedAt))
+          .where(
+            (attr, op) =>
+              `${op.eq(attr.updatedAt, item.updatedAt)} AND ${op.eq(attr.studentActivityCount, 0)}`,
+          )
           .commit(),
       ),
     ])

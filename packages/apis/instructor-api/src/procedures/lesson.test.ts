@@ -506,7 +506,7 @@ describe('deleteLesson', () => {
     expect(bestEffortCancelTranscodeJobs).not.toHaveBeenCalled();
   });
 
-  it('conditions each content item delete on updatedAt still matching what was just queried', async () => {
+  it('conditions each content item delete on updatedAt still matching what was just queried, and on no student activity', async () => {
     contentItemQueryPrimary.mockReturnValue({
       go: vi.fn().mockResolvedValue({ data: [contentItem] }),
     });
@@ -519,10 +519,15 @@ describe('deleteLesson', () => {
 
     const [whereCallback] = contentItemDeleteWhere.mock.calls[0]!;
     const eq = vi.fn((attr: string, value: string) => `${attr} = ${value}`);
-    const result = whereCallback({ updatedAt: 'updatedAt' }, { eq });
+    const result = whereCallback(
+      { updatedAt: 'updatedAt', studentActivityCount: 'studentActivityCount' },
+      { eq },
+    );
 
     expect(eq).toHaveBeenCalledWith('updatedAt', contentItem.updatedAt);
-    expect(result).toBe(`updatedAt = ${contentItem.updatedAt}`);
+    expect(result).toBe(
+      `updatedAt = ${contentItem.updatedAt} AND studentActivityCount = 0`,
+    );
   });
 
   // DynamoDB transactions cap at 100 items; a lesson with too many content

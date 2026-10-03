@@ -846,7 +846,8 @@ describe('permanent delete', () => {
         entity: 'contentItem',
         op: 'delete',
         key: itemKey('item-1'),
-        condition: 'updatedAt = 2024-03-01T00:00:00.000Z',
+        condition:
+          'updatedAt = 2024-03-01T00:00:00.000Z AND studentActivityCount = 0',
       },
     ]);
   });
@@ -870,7 +871,8 @@ describe('permanent delete', () => {
         entity: 'contentItem',
         op: 'delete',
         key: itemKey('item-1'),
-        condition: 'updatedAt = 2024-03-01T00:00:00.000Z',
+        condition:
+          'updatedAt = 2024-03-01T00:00:00.000Z AND studentActivityCount = 0',
       },
     ]);
   });
@@ -1644,4 +1646,91 @@ describe('remaining edge cases', () => {
     expect(bestEffortCancelTranscodeJobs).not.toHaveBeenCalled();
     expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
   });
+});
+
+describe('student activity during a cascade permanent delete', () => {
+  // Invariant: a cascade never deletes an item with student activity, even
+  // when that activity was written in the same millisecond as the snapshot
+  // (so updatedAt didn't change): every item delete also carries
+  // studentActivityCount = 0, so DynamoDB itself refuses it.
+  it.each([
+    [
+      'deleteModulePermanently',
+      moduleKey,
+      () =>
+        moduleGet.mockReturnValue(
+          resolves({ ...module, archivedAt: ARCHIVED_AT }),
+        ),
+    ],
+    [
+      'deleteLessonPermanently',
+      lessonKey,
+      () =>
+        lessonGet.mockReturnValue(
+          resolves({ ...lesson, archivedAt: ARCHIVED_AT }),
+        ),
+    ],
+  ] as const)(
+    '%s conditions every item delete on no student activity, not just on updatedAt',
+    async (procedure, input, arrange) => {
+      arrange();
+      contentItemQueryPrimary.mockReturnValue(
+        resolves([textItem('item-1'), textItem('item-2')]),
+      );
+
+      await (callAs() as any)[procedure](input);
+
+      const itemConditions = transactionWrites
+        .filter(({ entity }) => entity === 'contentItem')
+        .map(({ condition }) => condition);
+      expect(itemConditions).toHaveLength(2);
+      for (const condition of itemConditions) {
+        expect(condition).toContain('studentActivityCount = 0');
+      }
+    },
+  );
+
+  it.each([
+    [
+      'deleteModulePermanently',
+      moduleKey,
+      () =>
+        moduleGet.mockReturnValue(
+          resolves({ ...module, archivedAt: ARCHIVED_AT }),
+        ),
+    ],
+    [
+      'deleteLessonPermanently',
+      lessonKey,
+      () =>
+        lessonGet.mockReturnValue(
+          resolves({ ...lesson, archivedAt: ARCHIVED_AT }),
+        ),
+    ],
+  ] as const)(
+    '%s reports CONFLICT and cleans up nothing when DynamoDB refuses an item delete',
+    async (procedure, input, arrange) => {
+      arrange();
+      contentItemQueryPrimary.mockReturnValue(
+        resolves([
+          textItem('item-1', {
+            type: 'video',
+            s3Key: 'key.mp4',
+            mimeType: 'video/mp4',
+          }),
+        ]),
+      );
+      // The item's condition failed: its activity count is no longer 0.
+      transactionGo.mockResolvedValue({
+        canceled: true,
+        data: [{ code: 'None' }, { code: 'ConditionalCheckFailed' }],
+      });
+
+      await expect((callAs() as any)[procedure](input)).rejects.toMatchObject({
+        code: 'CONFLICT',
+      });
+      expect(bestEffortCancelTranscodeJobs).not.toHaveBeenCalled();
+      expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
+    },
+  );
 });

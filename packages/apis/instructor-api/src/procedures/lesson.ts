@@ -90,15 +90,19 @@ const hardDeleteLesson = async (
     });
   }
 
-  // Conditioned on updatedAt (bumped by every write, video or text -- see
-  // the contentItem entity's `watch: '*'` on that attribute) still matching
-  // `contentItems`. Without this, a content item that changes between the
-  // query and this transaction -- most notably a transcode completing and
-  // publishing its HLS output, or a student's first activity bumping
-  // studentActivityCount -- would still be deleted, but the cleanup below
-  // would act on the stale snapshot instead of what was actually removed. A
-  // transaction returns no deleted attributes to clean up from instead, so
-  // this can only reject and ask the caller to retry.
+  // Each content item delete is conditioned on two things:
+  // - updatedAt (bumped by every write -- see the contentItem entity's
+  //   `watch: '*'`) still matching `contentItems`. Without this, a content
+  //   item that changes between the query and this transaction -- most
+  //   notably a transcode completing and publishing its HLS output -- would
+  //   still be deleted, but the cleanup below would act on the stale
+  //   snapshot instead of what was actually removed. A transaction returns
+  //   no deleted attributes to clean up from instead, so this can only
+  //   reject and ask the caller to retry.
+  // - studentActivityCount = 0, checked directly rather than relying on
+  //   updatedAt to change: a millisecond-precision timestamp can come out
+  //   the same for a write in the same millisecond (or from another
+  //   machine's clock), and student data must never be deleted.
   const { canceled, data: transactionResults } = await coreTable.transaction
     .write((entities) => [
       checkedArchivedAt === undefined
@@ -115,7 +119,10 @@ const hardDeleteLesson = async (
             lessonId,
             contentItemId: item.contentItemId,
           })
-          .where((attr, op) => op.eq(attr.updatedAt, item.updatedAt))
+          .where(
+            (attr, op) =>
+              `${op.eq(attr.updatedAt, item.updatedAt)} AND ${op.eq(attr.studentActivityCount, 0)}`,
+          )
           .commit(),
       ),
     ])
