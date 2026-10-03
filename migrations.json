@@ -1,21 +1,7 @@
 {
   "migrations": [
     {
-      "version": "1.0.3",
-      "description": "Add the terraform-init target to Terraform projects so the shared provider plugin cache has a single writer",
-      "implementation": "./src/migrations/latest/terraform-init-target/migration",
-      "package": "@aws/nx-plugin",
-      "name": "latest-terraform-init-target"
-    },
-    {
-      "version": "1.0.2",
-      "description": "Send an empty map rather than null for a vended Terraform AgentCore Harness module's environment_variables, so the first apply does not fail after creating the Harness",
-      "implementation": "./src/migrations/v1.0.2/0001-terraform-harness-environment-variables/migration",
-      "package": "@aws/nx-plugin",
-      "name": "v1.0.2-0001-terraform-harness-environment-variables"
-    },
-    {
-      "version": "1.0.3",
+      "version": "1.0.4",
       "description": "Sync vended dependency versions and the tracked plugin version to those vended by this release",
       "implementation": "./src/utils/version-upgrade-migration/migration",
       "package": "@aws/nx-plugin",

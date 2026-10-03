@@ -97,9 +97,9 @@ jobs:
             echo "No ${prefix}* variables set; using stages.config.ts as-is."
           fi
 
-      # Don't release with a known HIGH/CRITICAL vulnerability (that has a fix)
-      # in the dependency tree, or with a committed secret. Accepted findings go
-      # in .trivyignore.
+      # Don't release with a known CRITICAL vulnerability (that has a fix) in
+      # the dependency tree, or with a committed HIGH/CRITICAL secret. Accepted
+      # findings go in .trivyignore.
       - name: Scan for vulnerabilities and secrets
         run: pnpm trivy
 
