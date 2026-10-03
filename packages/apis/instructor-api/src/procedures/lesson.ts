@@ -206,7 +206,12 @@ export const updateLesson = courseProcedure
     const { courseId, moduleId, lessonId, title, description, order } = input;
 
     await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
-    await getLessonOrThrow(coreTable, { courseId, moduleId, lessonId });
+    const existing = await getLessonOrThrow(coreTable, {
+      courseId,
+      moduleId,
+      lessonId,
+    });
+    requireNotArchived(existing, 'Restore the lesson before editing it');
 
     const { data: lesson } = await coreTable.entities.lesson
       .patch({ courseId, moduleId, lessonId })

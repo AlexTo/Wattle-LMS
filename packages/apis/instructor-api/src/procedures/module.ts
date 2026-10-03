@@ -205,7 +205,8 @@ export const updateModule = courseProcedure
     const { courseId, moduleId, title, description, order } = input;
 
     await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
-    await getModuleOrThrow(coreTable, courseId, moduleId);
+    const existing = await getModuleOrThrow(coreTable, courseId, moduleId);
+    requireNotArchived(existing, 'Restore the module before editing it');
 
     const { data: module } = await coreTable.entities.module
       .patch({ courseId, moduleId })

@@ -273,6 +273,52 @@ beforeEach(() => {
 });
 
 describe('createContentItemVideoUploadUrl', () => {
+  // Invariant: nothing can be uploaded for an archived lesson or an archived
+  // content item, so no upload is left behind that the create/update
+  // procedures would then reject.
+  it('refuses an archived lesson without minting an upload URL', async () => {
+    lessonGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: { ...lesson, archivedAt: '2024-02-01T00:00:00.000Z' },
+      }),
+    });
+
+    await expect(
+      callAs().createContentItemVideoUploadUrl({
+        courseId: COURSE_ID,
+        moduleId: MODULE_ID,
+        lessonId: LESSON_ID,
+        fileName: 'intro.mp4',
+      }),
+    ).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the lesson before adding content to it',
+    });
+    expect(getSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('refuses to replace the file of an archived content item without minting an upload URL', async () => {
+    contentItemGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: { ...contentItem, archivedAt: '2024-02-01T00:00:00.000Z' },
+      }),
+    });
+
+    await expect(
+      callAs().createContentItemVideoUploadUrl({
+        courseId: COURSE_ID,
+        moduleId: MODULE_ID,
+        lessonId: LESSON_ID,
+        fileName: 'intro.mp4',
+        contentItemId: CONTENT_ITEM_ID,
+      }),
+    ).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the content item before editing it',
+    });
+    expect(getSignedUrl).not.toHaveBeenCalled();
+  });
+
   it('rejects callers who are not in the instructor group before checking course membership', async () => {
     await expect(
       callAs(['student']).createContentItemVideoUploadUrl({
@@ -811,6 +857,32 @@ describe('updateContentItemVideo', () => {
       code: 'NOT_FOUND',
     });
     expect(contentItemPatch).not.toHaveBeenCalled();
+  });
+
+  // Invariant: an archived item must be restored before it's edited --
+  // including replacing its file, which must not touch S3 or MediaConvert.
+  it('refuses to edit an archived video before any side effect', async () => {
+    contentItemGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: { ...contentItem, archivedAt: '2024-02-01T00:00:00.000Z' },
+      }),
+    });
+
+    await expect(
+      callAs().updateContentItemVideo({
+        ...input,
+        title: 'New title',
+        objectKey: `${OBJECT_KEY_PREFIX}${CONTENT_ITEM_ID}/replacement.mp4`,
+        mimeType: 'video/mp4',
+      }),
+    ).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the content item before editing it',
+    });
+    expect(contentItemPatch).not.toHaveBeenCalled();
+    expect(getVideoUploadETag).not.toHaveBeenCalled();
+    expect(submitTranscodeJob).not.toHaveBeenCalled();
+    expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
   });
 
   it('only patches fields provided in the input', async () => {

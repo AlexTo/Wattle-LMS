@@ -59,7 +59,7 @@ Instructors edit through instructor-api's `course.view`, which returns the whole
 
 Publishing a module or lesson sets it and all of its hidden descendants to `visible` in **one transaction**, so students see a new lesson with all its items at once rather than piece by piece. Archived descendants, and content items under an archived lesson, are left as they are. Items the instructor wants kept back can be hidden individually afterwards.
 
-Hiding is not cascaded: it changes only the record itself, and its children keep their own `visibility`. Publishing the parent again shows them as they were. An archived record can't be published or hidden until it's restored.
+Hiding is not cascaded: it changes only the record itself, and its children keep their own `visibility`. Publishing the parent again shows them as they were. An archived record can't be published, hidden or edited until it's restored. That includes replacing an archived video's file: no upload URL is issued for it. Nothing can be added under an archived parent either: no new lessons in an archived module, and no new content (or upload URL) in an archived lesson.
 
 ## Removing (archiving)
 
@@ -109,6 +109,7 @@ The check and the delete are separate calls, so the delete itself carries the ch
 | Publishing a parent cascades to hidden children in one transaction | A new lesson appears complete, all at once |
 | Outside a draft course, delete always archives, and archives are restorable | Students' results must survive a mistaken delete; instructors need an undo |
 | `archivedAt` only on the archived record, not cascaded | Avoids DynamoDB's 100-item transaction limit, and a restore brings back exactly what was there |
+| Archived records must be restored before they're edited, and nothing can be added or uploaded under them | Keeps an archived record exactly as it was archived, so a restore brings back what students saw; refusing the upload URL up front means no file is uploaded only to be rejected |
 | Permanent delete only when no student has used the item | Student data is never destroyed by curriculum edits |
 | `studentActivityCount` counter rather than a boolean | Powers the impact warning as well as the permanent-delete guard |
 

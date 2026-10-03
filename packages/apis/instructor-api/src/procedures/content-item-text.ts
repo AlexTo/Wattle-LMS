@@ -121,6 +121,7 @@ export const updateContentItemText = courseProcedure
         message: `Content item is type '${existing.type}', not 'text'`,
       });
     }
+    requireNotArchived(existing, 'Restore the content item before editing it');
 
     const { data: contentItem } = await coreTable.entities.contentItem
       .patch({ courseId, moduleId, lessonId, contentItemId })

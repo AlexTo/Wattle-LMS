@@ -88,6 +88,12 @@ export const createContentItemVideoUploadUrl = courseProcedure
     if (!lesson) {
       throw new TRPCError({ code: 'NOT_FOUND' });
     }
+    // Refused before minting a URL, so nothing gets uploaded only for
+    // createContentItemVideo/updateContentItemVideo to reject it.
+    requireNotArchived(
+      lesson,
+      'Restore the lesson before adding content to it',
+    );
 
     const ext = extname(fileName).slice(1).toLowerCase();
     const contentType = ALLOWED_VIDEO_TYPES[ext];
@@ -116,6 +122,10 @@ export const createContentItemVideoUploadUrl = courseProcedure
       if (!existing || existing.type !== 'video') {
         throw new TRPCError({ code: 'NOT_FOUND' });
       }
+      requireNotArchived(
+        existing,
+        'Restore the content item before editing it',
+      );
     }
 
     const contentItemId = input.contentItemId ?? uuidv7();
@@ -379,6 +389,7 @@ export const updateContentItemVideo = courseProcedure
         message: `Content item is type '${existing.type}', not 'video'`,
       });
     }
+    requireNotArchived(existing, 'Restore the content item before editing it');
 
     // Replacing the underlying video: the object key must at least be
     // scoped to this lesson, so a caller can't point the record at an

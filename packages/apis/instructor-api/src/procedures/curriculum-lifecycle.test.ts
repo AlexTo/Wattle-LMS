@@ -12,7 +12,10 @@ import {
   publishContentItem,
   restoreContentItem,
 } from './content-item-shared.js';
-import { createContentItemText } from './content-item-text.js';
+import {
+  createContentItemText,
+  updateContentItemText,
+} from './content-item-text.js';
 import {
   createLesson,
   deleteLesson,
@@ -20,6 +23,7 @@ import {
   hideLesson,
   publishLesson,
   restoreLesson,
+  updateLesson,
 } from './lesson.js';
 import {
   createModule,
@@ -28,6 +32,7 @@ import {
   hideModule,
   publishModule,
   restoreModule,
+  updateModule,
 } from './module.js';
 
 // Covers what a course's status changes about curriculum edits (visibility of
@@ -113,6 +118,9 @@ vi.mock('../lib/mediaconvert-client.js', () => ({
 
 const router = t.router({
   createModule,
+  updateModule,
+  updateLesson,
+  updateContentItemText,
   deleteModule,
   publishModule,
   hideModule,
@@ -1275,4 +1283,65 @@ describe('publishLesson conflicts', () => {
       code: 'CONFLICT',
     });
   });
+});
+
+describe('editing an archived record', () => {
+  // Invariant: an archived record must be restored before it's edited.
+  it.each([
+    [
+      'updateModule',
+      { ...moduleKey, title: 'New title' },
+      moduleGet,
+      { ...module, archivedAt: ARCHIVED_AT },
+      'Restore the module before editing it',
+    ],
+    [
+      'updateLesson',
+      { ...lessonKey, title: 'New title' },
+      lessonGet,
+      { ...lesson, archivedAt: ARCHIVED_AT },
+      'Restore the lesson before editing it',
+    ],
+    [
+      'updateContentItemText',
+      { ...itemKey('item-1'), title: 'New title' },
+      contentItemGet,
+      textItem('item-1', { archivedAt: ARCHIVED_AT }),
+      'Restore the content item before editing it',
+    ],
+  ] as const)(
+    '%s refuses and writes nothing',
+    async (procedure, input, get, record, message) => {
+      get.mockReturnValue(resolves(record));
+
+      await expect((callAs() as any)[procedure](input)).rejects.toMatchObject({
+        code: 'PRECONDITION_FAILED',
+        message,
+      });
+      expect(modulePatch).not.toHaveBeenCalled();
+      expect(lessonPatch).not.toHaveBeenCalled();
+      expect(contentItemPatch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['updateModule', { ...moduleKey, title: 'New title' }, modulePatch, module],
+    ['updateLesson', { ...lessonKey, title: 'New title' }, lessonPatch, lesson],
+    [
+      'updateContentItemText',
+      { ...itemKey('item-1'), title: 'New title' },
+      contentItemPatch,
+      textItem('item-1'),
+    ],
+  ] as const)(
+    '%s still edits a record that is not archived',
+    async (procedure, input, patch, record) => {
+      const chain = patchChain({ ...record, title: 'New title' });
+      patch.mockReturnValue(chain);
+
+      await (callAs() as any)[procedure](input);
+
+      expect(chain.set).toHaveBeenCalledWith({ title: 'New title' });
+    },
+  );
 });
