@@ -19,13 +19,6 @@ onlyBuiltDependencies:
   - esbuild
   - nx
   - sharp
-# Force transitive dependencies past known HIGH/CRITICAL vulnerabilities (found
-# by `pnpm trivy`) that their dependents pin exactly. Each selector only matches
-# vulnerable versions, so it stops applying once the dependent upgrades; drop it
-# then.
-overrides:
-  # nx (as of 23.2.1) pins smol-toml 1.6.1 (CVE-2026-85730)
-  smol-toml@<1.7.1: ^1.7.1
 catalogMode: strict
 catalog:
   '@aws/nx-plugin': 1.0.4
