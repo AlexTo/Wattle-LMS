@@ -57,7 +57,7 @@ DynamoDB Streams on the core table, with event-source filters so the Lambda only
 
 For each affected (student, course):
 
-1. Load the course curriculum once (one `curriculum` collection query) and work out the effectively visible items.
+1. Load the course curriculum once (the `curriculum` collection, every page) and keep the effectively visible items with `filterEffectivelyVisible` from `@discava/core-table`, the same rule core-api's course views use.
 2. Read the student's `itemCompletion` records for the course (pk `userId`, sk prefix `courseId`).
 3. Write each lesson's `progress`. `completed` is only ever set, never cleared.
 4. Write the enrolment's `progressPercent`. At 100%, set `status: 'completed'` and `completedAt`, conditioned on the enrolment not already being `completed`.

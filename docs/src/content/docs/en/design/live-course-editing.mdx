@@ -31,6 +31,8 @@ A record is shown to students only if it and every ancestor are `visible` and no
 - every student write: quiz submission, marking an item complete;
 - every progress calculation.
 
+The rule is implemented once, as `filterEffectivelyVisible` in `@discava/core-table`, next to the attributes it interprets. core-api's course views use it, and so does the progress recalculation Lambda in `packages/events`, so what students see and what their progress counts can never disagree.
+
 So hiding or archiving a module also stops a quiz inside it being submitted, and removes its items from everyone's progress.
 
 Instructors edit through instructor-api's `course.view`, which returns the whole curriculum, including hidden and archived records along with their `visibility`, `archivedAt` and `studentActivityCount`. It's limited to instructors teaching the course. The course editor leaves archived records out of the main list and marks hidden ones **Hidden**.
@@ -59,7 +61,7 @@ Instructors edit through instructor-api's `course.view`, which returns the whole
 
 Publishing a module or lesson sets it and all of its hidden descendants to `visible` in **one transaction**, so students see a new lesson with all its items at once rather than piece by piece. Archived descendants, and content items under an archived lesson, are left as they are. Items the instructor wants kept back can be hidden individually afterwards.
 
-Hiding is not cascaded: it changes only the record itself, and its children keep their own `visibility`. Publishing the parent again shows them as they were. An archived record can't be published, hidden or edited until it's restored. That includes replacing an archived video's file: no upload URL is issued for it. Nothing can be added under an archived parent either: no new lessons in an archived module, and no new content (or upload URL) in an archived lesson.
+Hiding is not cascaded: it changes only the record itself, and its children keep their own `visibility`. Publishing the parent again shows them as they were.
 
 ## Removing (archiving)
 
@@ -80,6 +82,16 @@ Outside a draft course, delete always archives, and the instructor portal labels
 
 The archive triggers a progress recalculation for every enrolled student, so the removed content stops counting straight away, without anyone reloading.
 
+### What can't be done to an archived record
+
+An archived record stays exactly as it was archived until it's restored, so a restore brings back what students saw:
+
+- It can't be published, hidden or edited. Each is refused with "Restore the … first".
+- Replacing an archived video's file is an edit, so no upload URL is issued for it.
+- Nothing can be added under an archived parent: no new lessons in an archived module, and no new content, or upload URL, in an archived lesson.
+
+A video archived while it's still transcoding keeps transcoding. When the job finishes, the item is marked `ready` (or `failed`) without touching `archivedAt` or `visibility`, so it plays if it's restored and stays hidden until then.
+
 ## Restoring
 
 The instructor course page has an **Archived** section, grouped by module and lesson, with **Restore** on every row.
@@ -93,7 +105,19 @@ The instructor course page has an **Archived** section, grouped by module and le
 
 Offered only from the Archived view, and only when `studentActivityCount` is 0 for the item, or for every item under a lesson or module. Anything a student has used can be archived but never permanently deleted.
 
-The check and the delete are separate calls, so the delete itself carries the check as a condition: each content item's delete is conditioned on the `updatedAt` from the snapshot that was checked (a student's first activity bumps it), or, for a single item, on `studentActivityCount = 0` and the item still being archived. If anything changed in between, the delete is refused with a conflict and nothing is removed.
+The checks and the delete are separate calls, so the delete itself carries the checks as conditions:
+
+- each content item under a module or lesson, on the `updatedAt` from the snapshot that was checked (a student's first activity bumps it);
+- the module or lesson itself, on the `archivedAt` that was checked, so a restore landing in between cancels the delete;
+- a single content item, on `studentActivityCount = 0` and the item still being archived.
+
+If anything changed in between, the delete is refused with a conflict and nothing is removed.
+
+## Limits and repeated requests
+
+- **Whole sets only.** Publishing a module or lesson and permanently deleting one read every page of descendants, not just the first 1 MB, so nothing is left unpublished or orphaned.
+- **100-item transactions.** These operations must be atomic, and a DynamoDB transaction holds at most 100 items. If one would touch more, it's refused rather than split, so it never applies to only part of a module or lesson. Publishing individual lessons first keeps a large module under the limit.
+- **Repeats write nothing.** Archiving something already archived keeps its original `archivedAt`. Publishing what's visible, hiding what's hidden and restoring what isn't archived all return the record unchanged. A retried request, e.g. after a client-side timeout, is harmless.
 
 ## Out of scope
 
@@ -112,6 +136,9 @@ The check and the delete are separate calls, so the delete itself carries the ch
 | Archived records must be restored before they're edited, and nothing can be added or uploaded under them | Keeps an archived record exactly as it was archived, so a restore brings back what students saw; refusing the upload URL up front means no file is uploaded only to be rejected |
 | Permanent delete only when no student has used the item | Student data is never destroyed by curriculum edits |
 | `studentActivityCount` counter rather than a boolean | Powers the impact warning as well as the permanent-delete guard |
+| The visibility rule lives in `@discava/core-table` | It interprets core-table's own attributes, much like a soft-delete filter, and both core-api and the events Lambda already depend on core-table, so there is exactly one copy of the rule |
+| Operations over 100 records are refused, not split | A split publish or delete could stop partway, leaving a module half-published or half-deleted |
+| Repeating an operation writes nothing | Retries after timeouts are safe, and re-archiving doesn't move `archivedAt` |
 
 ## Open questions
 
