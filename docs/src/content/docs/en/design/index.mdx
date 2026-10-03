@@ -7,9 +7,7 @@ sidebar:
 
 import Link from '@components/link.astro';
 
-This section records **how features are designed and why**, for developers working on Discava.
-
-Each page covers one feature area and ends with the decisions made and their rationale.
+This section describes **how Discava's features work**. Each page covers one feature area.
 
 ## Pages
 
@@ -21,8 +19,8 @@ Each page covers one feature area and ends with the decisions made and their rat
 
 ## Shared concepts
 
-**Curriculum hierarchy.** A course contains modules, a module contains lessons, and a lesson contains an ordered list of content items (video, text, quiz). All four live in one DynamoDB partition (`COURSE#<courseId>`) through ElectroDB's `curriculum` collection, so a whole course is one query.
+**Curriculum hierarchy.** A course contains modules, a module contains lessons, and a lesson contains an ordered list of content items (video, text, quiz). All four live in one DynamoDB partition (`COURSE#<courseId>`) through ElectroDB's `curriculum` collection, so a whole course is one query. That query reads every page, since a course's curriculum can exceed DynamoDB's 1 MB per page.
 
-**Effective visibility.** A module, lesson or content item is shown to students only if it **and every ancestor** is `visible` and not archived. Student reads, student writes and progress calculations all use effective visibility, never a record's own `visibility` alone.
+**Effective visibility.** A module, lesson or content item is shown to students only if it **and every ancestor** is `visible` and not archived. Student reads, student writes and progress calculations all use effective visibility, never a record's own `visibility` alone. The rule is implemented once, as `filterEffectivelyVisible` in `@discava/core-table`.
 
 **Student data is keyed by user.** `progress`, `itemCompletion` and `quizAttempt` use `userId` as their partition key, so "a student's progress in a course" is one query. The flip side is that "which students touched this item?" can't be answered without a scan, which is why content items carry a `studentActivityCount`.

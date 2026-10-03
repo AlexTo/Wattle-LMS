@@ -12,12 +12,14 @@ import {
   EditLessonTextDialog,
   RemoveLessonTextButton,
 } from './edit-lesson-text-dialog';
+import { HiddenBadge } from './hidden-badge';
 
 export function LessonContentItemsRow({
   courseId,
   moduleId,
   lessonId,
   contentItems,
+  archive,
 }: {
   courseId: string;
   moduleId: string;
@@ -29,7 +31,10 @@ export function LessonContentItemsRow({
     description?: string;
     body?: string;
     status: string;
+    visibility: 'hidden' | 'visible';
   }[];
+  // Whether removing a content item archives it (any course but a draft).
+  archive: boolean;
 }) {
   return (
     <div className="bg-muted/15 pb-3 pl-12 pr-4 sm:pl-24 sm:pr-5">
@@ -45,6 +50,7 @@ export function LessonContentItemsRow({
             <span className="flex-1 truncate text-xs font-medium">
               {item.title}
             </span>
+            {item.visibility === 'hidden' && <HiddenBadge />}
             <AttachLessonVideoDialog
               courseId={courseId}
               moduleId={moduleId}
@@ -71,6 +77,7 @@ export function LessonContentItemsRow({
               lessonId={lessonId}
               contentItemId={item.contentItemId}
               title={item.title}
+              archive={archive}
             />
           </div>
         ) : (
@@ -84,6 +91,7 @@ export function LessonContentItemsRow({
             <span className="flex-1 truncate text-xs font-medium">
               {item.title}
             </span>
+            {item.visibility === 'hidden' && <HiddenBadge />}
             <EditLessonTextDialog
               courseId={courseId}
               moduleId={moduleId}
@@ -110,6 +118,7 @@ export function LessonContentItemsRow({
               lessonId={lessonId}
               contentItemId={item.contentItemId}
               title={item.title}
+              archive={archive}
             />
           </div>
         ),

@@ -29,13 +29,14 @@ import {
   courseStatusStyles,
 } from '../../../../components/course-status';
 import { Spinner } from '../../../../components/spinner';
-import { useCoreApi } from '../../../../hooks/useCoreApi';
+import { useInstructorApi } from '../../../../hooks/useInstructorApi';
 import { CreateLessonDialog } from './-components/create-lesson-dialog';
 import { CreateModuleDialog } from './-components/create-module-dialog';
 import { DeleteLessonDialog } from './-components/delete-lesson-dialog';
 import { DeleteModuleDialog } from './-components/delete-module-dialog';
 import { EditLessonDialog } from './-components/edit-lesson-dialog';
 import { EditModuleDialog } from './-components/edit-module-dialog';
+import { HiddenBadge } from './-components/hidden-badge';
 import { LessonContentItemsRow } from './-components/lesson-content-items-row';
 
 export const Route = createFileRoute('/_authenticated/my-courses_/$courseId')({
@@ -48,17 +49,47 @@ const courseStatusLabels: Record<string, CourseStatus> = {
   archived: 'Archived',
 };
 
+const withoutArchived = <
+  T extends {
+    modules: (M & {
+      archivedAt?: string;
+      lessons: (L & {
+        archivedAt?: string;
+        contentItems: (C & { archivedAt?: string })[];
+      })[];
+    })[];
+  },
+  M,
+  L,
+  C,
+>(
+  course: T,
+): T => ({
+  ...course,
+  modules: course.modules
+    .filter((module) => !module.archivedAt)
+    .map((module) => ({
+      ...module,
+      lessons: module.lessons
+        .filter((lesson) => !lesson.archivedAt)
+        .map((lesson) => ({
+          ...lesson,
+          contentItems: lesson.contentItems.filter((item) => !item.archivedAt),
+        })),
+    })),
+});
+
 function RouteComponent() {
   const { courseId } = Route.useParams();
-  const trpc = useCoreApi();
+  const trpc = useInstructorApi();
   const {
     isPending,
     isError,
     error,
-    data: course,
+    data: fullCourse,
   } = useQuery(trpc.course.view.queryOptions({ courseId }));
 
-  useBreadcrumbLabel(course?.title);
+  useBreadcrumbLabel(fullCourse?.title);
 
   if (isPending) {
     return (
@@ -81,7 +112,12 @@ function RouteComponent() {
       </Alert>
     );
   }
+  // Archived records move out of the editor; students' data for them is
+  // kept and they stay restorable through the API.
+  const course = withoutArchived(fullCourse);
   const status = courseStatusLabels[course.status] ?? 'Draft';
+  // Outside a draft course, delete archives instead of destroying anything.
+  const archiveOnDelete = course.status !== 'draft';
 
   return (
     <main className="mx-auto w-full max-w-5xl space-y-6 pb-10">
@@ -162,6 +198,7 @@ function RouteComponent() {
                       {moduleIndex + 1}
                     </span>
                     <span className="font-semibold">{module.title}</span>
+                    {module.visibility === 'hidden' && <HiddenBadge />}
                     <Badge variant="outline" className="hidden sm:inline-flex">
                       {module.lessons.length}{' '}
                       {module.lessons.length === 1 ? 'lesson' : 'lessons'}
@@ -188,6 +225,7 @@ function RouteComponent() {
                       moduleId={module.moduleId}
                       title={module.title}
                       lessonCount={module.lessons.length}
+                      archive={archiveOnDelete}
                       trigger={
                         <Button
                           variant="ghost"
@@ -241,6 +279,7 @@ function RouteComponent() {
                               <FileText className="size-4" />
                             </div>
                             <span className="font-medium">{lesson.title}</span>
+                            {lesson.visibility === 'hidden' && <HiddenBadge />}
                             <Badge
                               variant="outline"
                               className="hidden text-[10px] sm:inline-flex"
@@ -270,6 +309,7 @@ function RouteComponent() {
                               moduleId={module.moduleId}
                               lessonId={lesson.lessonId}
                               title={lesson.title}
+                              archive={archiveOnDelete}
                               trigger={
                                 <Button
                                   variant="ghost"
@@ -288,6 +328,7 @@ function RouteComponent() {
                             moduleId={module.moduleId}
                             lessonId={lesson.lessonId}
                             contentItems={lesson.contentItems}
+                            archive={archiveOnDelete}
                           />
                         </article>
                       ))}

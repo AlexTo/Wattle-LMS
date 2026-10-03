@@ -8,6 +8,7 @@ import { t } from '../init.js';
 import { createModule, deleteModule, updateModule } from './module.js';
 
 const {
+  courseGet,
   courseInstructorGet,
   moduleQueryPrimary,
   moduleCreate,
@@ -25,6 +26,7 @@ const {
   bestEffortDeleteContentItemVideos,
   bestEffortCancelTranscodeJobs,
 } = vi.hoisted(() => ({
+  courseGet: vi.fn(),
   courseInstructorGet: vi.fn(),
   moduleQueryPrimary: vi.fn(),
   moduleCreate: vi.fn(),
@@ -46,6 +48,7 @@ const {
 vi.mock('@discava/core-table', () => ({
   createCoreTableService: vi.fn(async () => ({
     entities: {
+      course: { get: courseGet },
       courseInstructor: {
         get: courseInstructorGet,
       },
@@ -108,6 +111,7 @@ const module = {
   courseId: COURSE_ID,
   title: 'Introduction',
   order: 1,
+  visibility: 'visible' as const,
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
@@ -118,6 +122,7 @@ const lesson = {
   courseId: COURSE_ID,
   title: 'Welcome',
   order: 1,
+  visibility: 'visible' as const,
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
@@ -132,12 +137,21 @@ const contentItem = {
   s3Key: 'lessons/lesson-1/content-item-1.mp4',
   mimeType: 'video/mp4',
   order: 1,
+  visibility: 'visible' as const,
+  studentActivityCount: 0,
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+
+  // A draft course, so delete here is the permanent, cascading delete. What
+  // changes outside a draft course (archive instead) is covered in
+  // curriculum-lifecycle.test.ts.
+  courseGet.mockReturnValue({
+    go: vi.fn().mockResolvedValue({ data: { status: 'draft' } }),
+  });
 
   courseInstructorGet.mockReturnValue({
     go: vi.fn().mockResolvedValue({
@@ -183,8 +197,9 @@ beforeEach(() => {
   moduleCreate.mockReturnValue({
     go: vi.fn().mockResolvedValue({ data: module }),
   });
+  // patch(key).set(values).where(notArchived).go()
   modulePatchSet.mockReturnValue({
-    go: vi.fn().mockResolvedValue({ data: module }),
+    where: () => ({ go: vi.fn().mockResolvedValue({ data: module }) }),
   });
   modulePatch.mockReturnValue({ set: modulePatchSet });
 });
@@ -341,7 +356,9 @@ describe('updateModule', () => {
   it('returns the updated module', async () => {
     const updatedModule = { ...module, title: 'Updated title' };
     modulePatchSet.mockReturnValue({
-      go: vi.fn().mockResolvedValue({ data: updatedModule }),
+      where: () => ({
+        go: vi.fn().mockResolvedValue({ data: updatedModule }),
+      }),
     });
 
     const result = await callAs().updateModule({
@@ -440,7 +457,7 @@ describe('deleteModule', () => {
     expect(bestEffortCancelTranscodeJobs).not.toHaveBeenCalled();
   });
 
-  it('conditions each content item delete on updatedAt still matching what was just queried', async () => {
+  it('conditions each content item delete on updatedAt still matching what was just queried, and on no student activity', async () => {
     contentItemQueryPrimary.mockReturnValue({
       go: vi.fn().mockResolvedValue({ data: [contentItem] }),
     });
@@ -449,16 +466,21 @@ describe('deleteModule', () => {
 
     const [whereCallback] = contentItemDeleteWhere.mock.calls[0]!;
     const eq = vi.fn((attr: string, value: string) => `${attr} = ${value}`);
-    const result = whereCallback({ updatedAt: 'updatedAt' }, { eq });
+    const result = whereCallback(
+      { updatedAt: 'updatedAt', studentActivityCount: 'studentActivityCount' },
+      { eq },
+    );
 
     expect(eq).toHaveBeenCalledWith('updatedAt', contentItem.updatedAt);
-    expect(result).toBe(`updatedAt = ${contentItem.updatedAt}`);
+    expect(result).toBe(
+      `updatedAt = ${contentItem.updatedAt} AND studentActivityCount = 0`,
+    );
   });
 
   // DynamoDB transactions cap at 100 items; a module with too many lessons
   // can't be cascade-deleted in one, so this must fail fast rather than let
   // DynamoDB reject the oversized transaction.
-  it('throws INTERNAL_SERVER_ERROR without attempting a transaction when the module has too many lessons', async () => {
+  it('throws PRECONDITION_FAILED without attempting a transaction when the module has too many lessons', async () => {
     lessonQueryPrimary.mockReturnValue({
       go: vi.fn().mockResolvedValue({
         data: Array.from({ length: 100 }, (_, i) => ({
@@ -470,13 +492,13 @@ describe('deleteModule', () => {
 
     await expect(
       callAs().deleteModule({ courseId: COURSE_ID, moduleId: MODULE_ID }),
-    ).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
     expect(transactionWrite).not.toHaveBeenCalled();
   });
 
   // Same cap, but tripped by content items instead of lessons -- both count
   // toward the same transaction.
-  it('throws INTERNAL_SERVER_ERROR without attempting a transaction when the module has too many content items', async () => {
+  it('throws PRECONDITION_FAILED without attempting a transaction when the module has too many content items', async () => {
     contentItemQueryPrimary.mockReturnValue({
       go: vi.fn().mockResolvedValue({
         data: Array.from({ length: 100 }, (_, i) => ({
@@ -488,7 +510,7 @@ describe('deleteModule', () => {
 
     await expect(
       callAs().deleteModule({ courseId: COURSE_ID, moduleId: MODULE_ID }),
-    ).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
     expect(transactionWrite).not.toHaveBeenCalled();
   });
 

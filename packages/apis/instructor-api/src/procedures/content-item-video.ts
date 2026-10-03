@@ -14,6 +14,13 @@ import {
   getSignedCloudFrontCookies,
 } from '../lib/cloudfront-client.js';
 import {
+  getCourseOrThrow,
+  initialVisibility,
+  requireAncestorsNotArchived,
+  requireNotArchived,
+  writeUnderActiveAncestors,
+} from '../lib/course-lifecycle.js';
+import {
   bestEffortCancelTranscodeJob,
   bestEffortCancelTranscodeJobs,
   submitTranscodeJob,
@@ -83,6 +90,13 @@ export const createContentItemVideoUploadUrl = courseProcedure
     if (!lesson) {
       throw new TRPCError({ code: 'NOT_FOUND' });
     }
+    // Refused before minting a URL, so nothing gets uploaded only for
+    // createContentItemVideo/updateContentItemVideo to reject it.
+    requireNotArchived(
+      lesson,
+      'Restore the lesson before adding content to it',
+    );
+    await requireAncestorsNotArchived(coreTable, { courseId, moduleId });
 
     const ext = extname(fileName).slice(1).toLowerCase();
     const contentType = ALLOWED_VIDEO_TYPES[ext];
@@ -111,6 +125,10 @@ export const createContentItemVideoUploadUrl = courseProcedure
       if (!existing || existing.type !== 'video') {
         throw new TRPCError({ code: 'NOT_FOUND' });
       }
+      requireNotArchived(
+        existing,
+        'Restore the content item before editing it',
+      );
     }
 
     const contentItemId = input.contentItemId ?? uuidv7();
@@ -173,6 +191,12 @@ export const createContentItemVideo = courseProcedure
     if (!lesson) {
       throw new TRPCError({ code: 'NOT_FOUND' });
     }
+    requireNotArchived(
+      lesson,
+      'Restore the lesson before adding content to it',
+    );
+    await requireAncestorsNotArchived(coreTable, { courseId, moduleId });
+    const course = await getCourseOrThrow(coreTable, courseId);
 
     // The object key must be one this lesson's own upload-url procedure
     // could have issued, so a caller can't record metadata pointing at an
@@ -215,22 +239,30 @@ export const createContentItemVideo = courseProcedure
     // match that when passed into op.eq() further down.
     const submissionNonce: string = randomUUID();
 
+    // Created in the same transaction as checks that the module and lesson
+    // are still there and not archived, so one archived or deleted after
+    // the checks above can't end up with new content.
+    const key = { courseId, moduleId, lessonId, contentItemId };
+    await writeUnderActiveAncestors(coreTable, key, (entities) => [
+      entities.contentItem
+        .create({
+          ...key,
+          type: 'video',
+          status: 'pending',
+          title,
+          description,
+          s3Key: objectKey,
+          mimeType,
+          durationSeconds,
+          order,
+          visibility: initialVisibility(course),
+          submissionNonce,
+        })
+        .commit(),
+    ]);
+    // Transactions don't return the written attributes.
     const { data: contentItem } = await coreTable.entities.contentItem
-      .create({
-        contentItemId,
-        lessonId,
-        moduleId,
-        courseId,
-        type: 'video',
-        status: 'pending',
-        title,
-        description,
-        s3Key: objectKey,
-        mimeType,
-        durationSeconds,
-        order,
-        submissionNonce,
-      })
+      .get(key)
       .go();
 
     let mediaConvertJobId: string;
@@ -368,6 +400,22 @@ export const updateContentItemVideo = courseProcedure
         message: `Content item is type '${existing.type}', not 'video'`,
       });
     }
+    requireNotArchived(existing, 'Restore the content item before editing it');
+    await requireAncestorsNotArchived(coreTable, {
+      courseId,
+      moduleId,
+      lessonId,
+    });
+
+    const videoKey = { courseId, moduleId, lessonId, contentItemId };
+    // A write below lost its race: another replace, an edit, a delete or an
+    // archive landed since the read above.
+    const throwModifiedConflict = (): never => {
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message: 'Content item was modified by another request; please retry',
+      });
+    };
 
     // Replacing the underlying video: the object key must at least be
     // scoped to this lesson, so a caller can't point the record at an
@@ -427,37 +475,36 @@ export const updateContentItemVideo = courseProcedure
         if (Object.keys(metadataUpdates).length === 0) {
           return asContentItemOutput<IUpdateContentItemVideoOutput>(existing);
         }
-        try {
-          const { data: updated } = await coreTable.entities.contentItem
-            .patch({ courseId, moduleId, lessonId, contentItemId })
-            .set(metadataUpdates)
-            // Same ownership check as every other write in this file --
-            // proves the record is still genuinely this exact submission's
-            // before applying an edit that has nothing to do with the
-            // transcode dedup above.
-            .where((attr, op) =>
-              op.eq(attr.submissionNonce, existing.submissionNonce!),
-            )
-            .go({ response: 'all_new' });
-          return asContentItemOutput<IUpdateContentItemVideoOutput>(updated);
-        } catch (error) {
-          if (!isConditionalCheckFailed(error)) {
-            throw error;
-          }
-          // Lost ownership: a concurrent replacement or delete has already
-          // superseded this record since it was read above -- an ordinary
-          // transcode completion never touches submissionNonce, so this
-          // can't be that. Reporting success here (even with the earlier
-          // snapshot) would be wrong: the caller's edit was explicitly
-          // rejected, not applied, and the snapshot may already describe a
-          // submission that no longer exists. Same CONFLICT the
-          // replacement branch below throws for the same kind of race.
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message:
-              'Content item was modified by another request; please retry',
-          });
-        }
+        // Same ownership check as every other write in this file -- proves
+        // the record is still genuinely this exact submission's before
+        // applying an edit that has nothing to do with the transcode dedup
+        // above -- plus the module, lesson and item still not archived.
+        // Losing ownership means a concurrent replacement or delete has
+        // already superseded this record since it was read above (an
+        // ordinary transcode completion never touches submissionNonce).
+        // Reporting success with the earlier snapshot would be wrong: the
+        // caller's edit was rejected, not applied, so it's the same CONFLICT
+        // the replacement branch below throws for the same kind of race.
+        await writeUnderActiveAncestors(
+          coreTable,
+          videoKey,
+          (entities) => [
+            entities.contentItem
+              .patch(videoKey)
+              .set(metadataUpdates)
+              .where(
+                (attr, op) =>
+                  `${op.eq(attr.submissionNonce, existing.submissionNonce!)} AND ${op.notExists(attr.archivedAt)}`,
+              )
+              .commit(),
+          ],
+          throwModifiedConflict,
+        );
+        // Transactions don't return the written attributes.
+        const { data: updated } = await coreTable.entities.contentItem
+          .get(videoKey)
+          .go();
+        return asContentItemOutput<IUpdateContentItemVideoOutput>(updated);
       }
 
       // A crashed retry (submitTranscodeJob succeeded, but the process
@@ -482,75 +529,88 @@ export const updateContentItemVideo = courseProcedure
 
     let contentItem;
     if (objectKey !== undefined) {
-      try {
-        const result = await coreTable.entities.contentItem
-          .patch({ courseId, moduleId, lessonId, contentItemId })
-          .set({
-            ...(title !== undefined && { title }),
-            ...(description !== undefined && { description }),
-            // Replacing the file invalidates whatever transcode already
-            // ran against the old one -- the new object needs to go
-            // through it again before it's playable.
-            s3Key: objectKey,
-            status: 'pending',
-            submissionNonce,
-            ...(mimeType !== undefined && { mimeType }),
-            ...(durationSeconds !== undefined && { durationSeconds }),
-          })
-          // Clearing mediaConvertJobId here (rather than leaving whatever
-          // job, if any, the video being replaced previously had) makes it
-          // an unambiguous signal for a future read of this record: still
-          // undefined means no job has been stamped for *this* submission
-          // attempt yet. Without this, a retry after a crash between
-          // submitTranscodeJob succeeding and the follow-up stamp below
-          // would see a defined-but-stale id here, fail the crash-gap
-          // nonce-reuse check above, and submit a duplicate job instead of
-          // reconnecting to the one that attempt already created. A
-          // no-op when there was nothing to clear (a fresh item, or a
-          // retry already resuming this same attempt).
-          .remove(['mediaConvertJobId'])
-          // Guards against a second updateContentItemVideo replace racing
-          // this one: if status/s3Key/submissionNonce have changed since
-          // the .get() above, another replace already landed first, and
-          // proceeding here would submit a second job writing to the same
-          // S3 destination as that one (#123). A concurrent metadata-only
-          // edit never touches these fields, so it can never trip this
-          // check -- only two concurrent replacements can. submissionNonce
-          // is included alongside status/s3Key because objectKey is
-          // deterministic from contentItemId + extension: two concurrent
-          // same-extension replacements of an already-pending item can
-          // read identical status/s3Key values on both sides of the race,
-          // so those two alone wouldn't always catch it; submissionNonce is
-          // freshly randomized per call and can never coincidentally match.
-          // Older records from before submissionNonce existed have nothing
-          // to compare, so the check falls back to status/s3Key only for
-          // them, same as it always has.
-          .where((attr, op) => {
-            const condition = `${op.eq(attr.status, existing.status)} AND ${op.eq(attr.s3Key, existing.s3Key!)}`;
-            return existing.submissionNonce
-              ? `${condition} AND ${op.eq(attr.submissionNonce, existing.submissionNonce)}`
-              : condition;
-          })
-          .go({ response: 'all_new' });
-        contentItem = result.data;
-      } catch (error) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: 'Content item was modified by another request; please retry',
-        });
-      }
+      // Also conditioned, in the same transaction, on the module and lesson
+      // still being active and the item still not archived, so an archive
+      // landing after the checks above can't be replaced past.
+      await writeUnderActiveAncestors(
+        coreTable,
+        videoKey,
+        (entities) => [
+          entities.contentItem
+            .patch(videoKey)
+            .set({
+              ...(title !== undefined && { title }),
+              ...(description !== undefined && { description }),
+              // Replacing the file invalidates whatever transcode already
+              // ran against the old one -- the new object needs to go
+              // through it again before it's playable.
+              s3Key: objectKey,
+              status: 'pending',
+              submissionNonce,
+              ...(mimeType !== undefined && { mimeType }),
+              ...(durationSeconds !== undefined && { durationSeconds }),
+            })
+            // Clearing mediaConvertJobId here (rather than leaving whatever
+            // job, if any, the video being replaced previously had) makes it
+            // an unambiguous signal for a future read of this record: still
+            // undefined means no job has been stamped for *this* submission
+            // attempt yet. Without this, a retry after a crash between
+            // submitTranscodeJob succeeding and the follow-up stamp below
+            // would see a defined-but-stale id here, fail the crash-gap
+            // nonce-reuse check above, and submit a duplicate job instead of
+            // reconnecting to the one that attempt already created. A
+            // no-op when there was nothing to clear (a fresh item, or a
+            // retry already resuming this same attempt).
+            .remove(['mediaConvertJobId'])
+            // Guards against a second updateContentItemVideo replace racing
+            // this one: if status/s3Key/submissionNonce have changed since
+            // the .get() above, another replace already landed first, and
+            // proceeding here would submit a second job writing to the same
+            // S3 destination as that one (#123). A concurrent metadata-only
+            // edit never touches these fields, so it can never trip this
+            // check -- only two concurrent replacements can. submissionNonce
+            // is included alongside status/s3Key because objectKey is
+            // deterministic from contentItemId + extension: two concurrent
+            // same-extension replacements of an already-pending item can
+            // read identical status/s3Key values on both sides of the race,
+            // so those two alone wouldn't always catch it; submissionNonce is
+            // freshly randomized per call and can never coincidentally match.
+            // Older records from before submissionNonce existed have nothing
+            // to compare, so the check falls back to status/s3Key only for
+            // them, same as it always has.
+            .where((attr, op) => {
+              const condition = `${op.eq(attr.status, existing.status)} AND ${op.eq(attr.s3Key, existing.s3Key!)}`;
+              const owned = existing.submissionNonce
+                ? `${condition} AND ${op.eq(attr.submissionNonce, existing.submissionNonce)}`
+                : condition;
+              return `${owned} AND ${op.notExists(attr.archivedAt)}`;
+            })
+            .commit(),
+        ],
+        throwModifiedConflict,
+      );
     } else {
-      const result = await coreTable.entities.contentItem
-        .patch({ courseId, moduleId, lessonId, contentItemId })
-        .set({
-          ...(title !== undefined && { title }),
-          ...(description !== undefined && { description }),
-          ...(mimeType !== undefined && { mimeType }),
-          ...(durationSeconds !== undefined && { durationSeconds }),
-        })
-        .go({ response: 'all_new' });
-      contentItem = result.data;
+      await writeUnderActiveAncestors(
+        coreTable,
+        videoKey,
+        (entities) => [
+          entities.contentItem
+            .patch(videoKey)
+            .set({
+              ...(title !== undefined && { title }),
+              ...(description !== undefined && { description }),
+              ...(mimeType !== undefined && { mimeType }),
+              ...(durationSeconds !== undefined && { durationSeconds }),
+            })
+            .where((attr, op) => op.notExists(attr.archivedAt))
+            .commit(),
+        ],
+        throwModifiedConflict,
+      );
     }
+    // Transactions don't return the written attributes.
+    contentItem = (await coreTable.entities.contentItem.get(videoKey).go())
+      .data;
 
     if (objectKey !== undefined) {
       // Only reachable once the patch above has actually landed -- this

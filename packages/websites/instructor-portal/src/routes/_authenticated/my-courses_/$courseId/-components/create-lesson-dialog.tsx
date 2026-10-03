@@ -19,7 +19,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
 import { z } from 'zod';
 import { Alert } from '../../../../../components/alert';
-import { useCoreApi } from '../../../../../hooks/useCoreApi';
 import { useInstructorApi } from '../../../../../hooks/useInstructorApi';
 
 const lessonFormSchema = z.object({
@@ -37,8 +36,7 @@ export function CreateLessonDialog({
   trigger: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const { course } = useCoreApi();
-  const { lesson } = useInstructorApi();
+  const { course, lesson } = useInstructorApi();
   const queryClient = useQueryClient();
   const {
     mutateAsync: createLesson,

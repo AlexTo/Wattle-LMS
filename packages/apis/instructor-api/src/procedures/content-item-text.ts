@@ -6,6 +6,13 @@ import { TRPCError } from '@trpc/server';
 import { v7 as uuidv7 } from 'uuid';
 import { courseProcedure } from '../init.js';
 import {
+  getCourseOrThrow,
+  initialVisibility,
+  requireAncestorsNotArchived,
+  requireNotArchived,
+  writeUnderActiveAncestors,
+} from '../lib/course-lifecycle.js';
+import {
   CreateContentItemTextInputSchema,
   CreateContentItemTextOutputSchema,
   type ICreateContentItemTextOutput,
@@ -38,6 +45,12 @@ export const createContentItemText = courseProcedure
     if (!lesson) {
       throw new TRPCError({ code: 'NOT_FOUND' });
     }
+    requireNotArchived(
+      lesson,
+      'Restore the lesson before adding content to it',
+    );
+    await requireAncestorsNotArchived(coreTable, { courseId, moduleId });
+    const course = await getCourseOrThrow(coreTable, courseId);
 
     // Text items have no upload step (unlike video, whose id is minted by
     // createContentItemVideoUploadUrl), so the id is generated here.
@@ -53,20 +66,28 @@ export const createContentItemText = courseProcedure
     const order =
       contentItems.reduce((max, item) => Math.max(max, item.order), 0) + 1;
 
-    const { data: contentItem } = await coreTable.entities.contentItem
-      .create({
-        contentItemId,
-        lessonId,
-        moduleId,
-        courseId,
-        type: 'text',
-        title,
-        description,
-        body,
-        order,
-      })
-      .go();
+    // Created in the same transaction as checks that the module and lesson
+    // are still there and not archived, so one archived or deleted after
+    // the checks above can't end up with new content.
+    const key = { courseId, moduleId, lessonId, contentItemId };
+    await writeUnderActiveAncestors(coreTable, key, (entities) => [
+      entities.contentItem
+        .create({
+          ...key,
+          type: 'text',
+          title,
+          description,
+          body,
+          order,
+          visibility: initialVisibility(course),
+        })
+        .commit(),
+    ]);
 
+    // Transactions don't return the written attributes.
+    const { data: contentItem } = await coreTable.entities.contentItem
+      .get(key)
+      .go();
     return asContentItemOutput<ICreateContentItemTextOutput>(contentItem);
   });
 
@@ -110,15 +131,53 @@ export const updateContentItemText = courseProcedure
         message: `Content item is type '${existing.type}', not 'text'`,
       });
     }
+    requireNotArchived(existing, 'Restore the content item before editing it');
+    await requireAncestorsNotArchived(coreTable, {
+      courseId,
+      moduleId,
+      lessonId,
+    });
 
+    // Conditioned, in one transaction, on the module and lesson still being
+    // active and the item itself still not archived, so an archive landing
+    // after the checks above can't be edited past.
+    const key = { courseId, moduleId, lessonId, contentItemId };
+    await writeUnderActiveAncestors(
+      coreTable,
+      key,
+      (entities) => [
+        entities.contentItem
+          .patch(key)
+          .set({
+            ...(title !== undefined && { title }),
+            ...(description !== undefined && { description }),
+            ...(body !== undefined && { body }),
+          })
+          .where((attr, op) => op.notExists(attr.archivedAt))
+          .commit(),
+      ],
+      async () => {
+        const { data: current } = await coreTable.entities.contentItem
+          .get(key)
+          .go();
+        if (!current) {
+          throw new TRPCError({ code: 'NOT_FOUND' });
+        }
+        requireNotArchived(
+          current,
+          'Restore the content item before editing it',
+        );
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message:
+            'The content item was modified by another request; please retry',
+        });
+      },
+    );
+
+    // Transactions don't return the written attributes.
     const { data: contentItem } = await coreTable.entities.contentItem
-      .patch({ courseId, moduleId, lessonId, contentItemId })
-      .set({
-        ...(title !== undefined && { title }),
-        ...(description !== undefined && { description }),
-        ...(body !== undefined && { body }),
-      })
-      .go({ response: 'all_new' });
-
+      .get(key)
+      .go();
     return asContentItemOutput<IUpdateContentItemTextOutput>(contentItem);
   });

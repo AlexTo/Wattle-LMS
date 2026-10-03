@@ -15,7 +15,6 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
 import { Alert } from '../../../../../components/alert';
-import { useCoreApi } from '../../../../../hooks/useCoreApi';
 import { useInstructorApi } from '../../../../../hooks/useInstructorApi';
 
 export function DeleteModuleDialog({
@@ -23,17 +22,20 @@ export function DeleteModuleDialog({
   moduleId,
   title,
   lessonCount,
+  archive,
   trigger,
 }: {
   courseId: string;
   moduleId: string;
   title: string;
   lessonCount: number;
+  // Outside a draft course, delete archives the module instead: students
+  // stop seeing it, but it and their data for it are kept and restorable.
+  archive: boolean;
   trigger: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const { course } = useCoreApi();
-  const { module } = useInstructorApi();
+  const { course, module } = useInstructorApi();
   const queryClient = useQueryClient();
   const {
     mutateAsync: deleteModule,
@@ -56,18 +58,34 @@ export function DeleteModuleDialog({
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Delete module</DialogTitle>
-          <p className="text-sm text-muted-foreground">
-            Are you sure you want to delete "{title}"?{' '}
-            {lessonCount > 0
-              ? `This will also delete ${lessonCount} ${lessonCount === 1 ? 'lesson' : 'lessons'} inside it. `
-              : ''}
-            This can't be undone.
-          </p>
+          <DialogTitle>
+            {archive ? 'Archive module' : 'Delete module'}
+          </DialogTitle>
+          {archive ? (
+            <p className="text-sm text-muted-foreground">
+              Students will no longer see "{title}" or anything in it. Their
+              progress and results are kept, and the module can be restored.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to delete "{title}"?{' '}
+              {lessonCount > 0
+                ? `This will also delete ${lessonCount} ${lessonCount === 1 ? 'lesson' : 'lessons'} inside it. `
+                : ''}
+              This can't be undone.
+            </p>
+          )}
         </DialogHeader>
 
         {isError && (
-          <Alert type="error" header="Couldn't delete the module">
+          <Alert
+            type="error"
+            header={
+              archive
+                ? "Couldn't archive the module"
+                : "Couldn't delete the module"
+            }
+          >
             {error.message}
           </Alert>
         )}
@@ -82,7 +100,7 @@ export function DeleteModuleDialog({
           </Button>
           <Button
             type="button"
-            variant="destructive"
+            variant={archive ? 'default' : 'destructive'}
             disabled={isPending}
             onClick={async () => {
               try {
@@ -97,7 +115,13 @@ export function DeleteModuleDialog({
               });
             }}
           >
-            {isPending ? 'Deleting...' : 'Delete module'}
+            {archive
+              ? isPending
+                ? 'Archiving...'
+                : 'Archive module'
+              : isPending
+                ? 'Deleting...'
+                : 'Delete module'}
           </Button>
         </DialogFooter>
       </DialogContent>

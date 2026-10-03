@@ -15,7 +15,6 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
 import { Alert } from '../../../../../components/alert';
-import { useCoreApi } from '../../../../../hooks/useCoreApi';
 import { useInstructorApi } from '../../../../../hooks/useInstructorApi';
 
 export function DeleteLessonDialog({
@@ -23,17 +22,20 @@ export function DeleteLessonDialog({
   moduleId,
   lessonId,
   title,
+  archive,
   trigger,
 }: {
   courseId: string;
   moduleId: string;
   lessonId: string;
   title: string;
+  // Outside a draft course, delete archives the lesson instead: students
+  // stop seeing it, but it and their data for it are kept and restorable.
+  archive: boolean;
   trigger: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const { course } = useCoreApi();
-  const { lesson } = useInstructorApi();
+  const { course, lesson } = useInstructorApi();
   const queryClient = useQueryClient();
   const {
     mutateAsync: deleteLesson,
@@ -56,14 +58,25 @@ export function DeleteLessonDialog({
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Delete lesson</DialogTitle>
+          <DialogTitle>
+            {archive ? 'Archive lesson' : 'Delete lesson'}
+          </DialogTitle>
           <p className="text-sm text-muted-foreground">
-            Are you sure you want to delete "{title}"? This can't be undone.
+            {archive
+              ? `Students will no longer see "${title}" or its content. Their progress and results are kept, and the lesson can be restored.`
+              : `Are you sure you want to delete "${title}"? This can't be undone.`}
           </p>
         </DialogHeader>
 
         {isError && (
-          <Alert type="error" header="Couldn't delete the lesson">
+          <Alert
+            type="error"
+            header={
+              archive
+                ? "Couldn't archive the lesson"
+                : "Couldn't delete the lesson"
+            }
+          >
             {error.message}
           </Alert>
         )}
@@ -78,7 +91,7 @@ export function DeleteLessonDialog({
           </Button>
           <Button
             type="button"
-            variant="destructive"
+            variant={archive ? 'default' : 'destructive'}
             disabled={isPending}
             onClick={async () => {
               try {
@@ -93,7 +106,13 @@ export function DeleteLessonDialog({
               });
             }}
           >
-            {isPending ? 'Deleting...' : 'Delete lesson'}
+            {archive
+              ? isPending
+                ? 'Archiving...'
+                : 'Archive lesson'
+              : isPending
+                ? 'Deleting...'
+                : 'Delete lesson'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -11,6 +11,10 @@ import {
 } from './content-item-text.js';
 
 const {
+  transactionWrite,
+  transactionGo,
+  moduleGet,
+  courseGet,
   courseInstructorGet,
   lessonGet,
   contentItemQueryPrimary,
@@ -19,6 +23,10 @@ const {
   contentItemPatch,
   contentItemPatchSet,
 } = vi.hoisted(() => ({
+  transactionWrite: vi.fn(),
+  transactionGo: vi.fn(),
+  moduleGet: vi.fn(),
+  courseGet: vi.fn(),
   courseInstructorGet: vi.fn(),
   lessonGet: vi.fn(),
   contentItemQueryPrimary: vi.fn(),
@@ -31,8 +39,12 @@ const {
 vi.mock('@discava/core-table', () => ({
   createCoreTableService: vi.fn(async () => ({
     entities: {
+      course: { get: courseGet },
       courseInstructor: {
         get: courseInstructorGet,
+      },
+      module: {
+        get: moduleGet,
       },
       lesson: {
         get: lessonGet,
@@ -45,6 +57,9 @@ vi.mock('@discava/core-table', () => ({
         get: contentItemGet,
         patch: contentItemPatch,
       },
+    },
+    transaction: {
+      write: transactionWrite,
     },
   })),
 }));
@@ -77,6 +92,7 @@ const lesson = {
   courseId: COURSE_ID,
   title: 'Welcome',
   order: 1,
+  visibility: 'visible' as const,
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
@@ -92,6 +108,8 @@ const contentItem = {
   s3Key: `courses/${COURSE_ID}/modules/${MODULE_ID}/lessons/${LESSON_ID}/content-items/${CONTENT_ITEM_ID}.mp4`,
   mimeType: 'video/mp4',
   order: 1,
+  visibility: 'visible' as const,
+  studentActivityCount: 0,
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
@@ -111,6 +129,8 @@ const textContentItem = {
   title: 'Welcome notes',
   body: textBody,
   order: 1,
+  visibility: 'visible' as const,
+  studentActivityCount: 0,
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
@@ -118,9 +138,19 @@ const textContentItem = {
 beforeEach(() => {
   vi.clearAllMocks();
 
+  courseGet.mockReturnValue({
+    go: vi.fn().mockResolvedValue({ data: { status: 'draft' } }),
+  });
+
   courseInstructorGet.mockReturnValue({
     go: vi.fn().mockResolvedValue({
       data: { courseId: COURSE_ID, instructorId: INSTRUCTOR_SUB },
+    }),
+  });
+  // The module above the lesson; not archived unless a test says so.
+  moduleGet.mockReturnValue({
+    go: vi.fn().mockResolvedValue({
+      data: { moduleId: MODULE_ID, visibility: 'visible' },
     }),
   });
   lessonGet.mockReturnValue({
@@ -129,16 +159,29 @@ beforeEach(() => {
   contentItemQueryPrimary.mockReturnValue({
     go: vi.fn().mockResolvedValue({ data: [] }),
   });
-  contentItemCreate.mockReturnValue({
-    go: vi.fn().mockResolvedValue({ data: textContentItem }),
-  });
+  // Creates and edits are written in a transaction behind checks that the
+  // module and lesson are still active, so their chains end in .commit();
+  // the result is read back with get.
+  contentItemCreate.mockReturnValue({ commit: () => ({}) });
   contentItemGet.mockReturnValue({
     go: vi.fn().mockResolvedValue({ data: textContentItem }),
   });
   contentItemPatch.mockReturnValue({ set: contentItemPatchSet });
   contentItemPatchSet.mockReturnValue({
-    go: vi.fn().mockResolvedValue({ data: textContentItem }),
+    where: () => ({ commit: () => ({}) }),
   });
+  const ancestorCheck = () => ({
+    where: () => ({ commit: () => ({}) }),
+  });
+  transactionWrite.mockImplementation((fn) => {
+    fn({
+      module: { check: ancestorCheck },
+      lesson: { check: ancestorCheck },
+      contentItem: { create: contentItemCreate, patch: contentItemPatch },
+    });
+    return { go: transactionGo };
+  });
+  transactionGo.mockResolvedValue({ canceled: false, data: [] });
 });
 
 describe('createContentItemText', () => {

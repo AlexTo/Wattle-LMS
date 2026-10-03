@@ -39,6 +39,22 @@ export const createModuleEntity = async () =>
           type: 'number',
           required: true,
         },
+        // Whether students can see this record. No default: create
+        // procedures choose it from the course's status (visible in a draft
+        // course, hidden until explicitly published otherwise). Students only
+        // see a record that is *effectively* visible: it and every ancestor
+        // visible and not archived (see ../curriculum.ts).
+        visibility: {
+          type: ['hidden', 'visible'] as const,
+          required: true,
+        },
+        // Soft delete for courses that aren't drafts. Set only on the
+        // archived record itself; its descendants are hidden by being under
+        // an archived ancestor, not by being archived themselves, so a
+        // restore brings back exactly what was there.
+        archivedAt: {
+          type: 'string',
+        },
         createdAt: {
           type: 'string',
           required: true,

@@ -328,3 +328,38 @@ describe('transcodeComplete', () => {
     expect(s3Send).not.toHaveBeenCalled();
   });
 });
+
+// An instructor can archive a video while it's still transcoding. The
+// handler never reads the record, so archive state isn't an input here; what
+// matters is that its write leaves archivedAt and visibility alone and isn't
+// conditioned on them -- so the outcome still lands on an archived video (it
+// plays once restored) without bringing it back for students.
+describe('transcodeComplete leaves archive state and visibility alone', () => {
+  // Renders a `.where()` callback into a readable condition string.
+  const renderCondition = (where: (attr: any, op: any) => string): string =>
+    where(new Proxy({}, { get: (_target, name) => String(name) }), {
+      eq: (name: string, value: unknown) => `${name} = ${value}`,
+    });
+
+  it.each([
+    ['COMPLETE', 'ready'],
+    ['ERROR', 'failed'],
+  ] as const)(
+    'on %s, records the outcome without touching archivedAt or visibility',
+    async (status, outcome) => {
+      await transcodeComplete(buildEvent(status) as any);
+
+      const [written] = contentItemPatchSet.mock.calls[0];
+      expect(written.status).toBe(outcome);
+      expect(written).not.toHaveProperty('archivedAt');
+      expect(written).not.toHaveProperty('visibility');
+      // Conditioned only on still owning this submission -- never on the
+      // item's archive state, which would drop the outcome for an archived
+      // video and leave it pending forever once restored.
+      expect(renderCondition(contentItemPatchWhere.mock.calls[0][0])).toBe(
+        `submissionNonce = ${SUBMISSION_NONCE}`,
+      );
+      expect(scheduleTranscodeCleanupOrThrow).not.toHaveBeenCalled();
+    },
+  );
+});

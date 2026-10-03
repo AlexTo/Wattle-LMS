@@ -3,3 +3,6 @@
 
 # translation diffs written during a translate run
 .translate-diffs/
+
+# astro-d2 generated diagrams
+public/d2/

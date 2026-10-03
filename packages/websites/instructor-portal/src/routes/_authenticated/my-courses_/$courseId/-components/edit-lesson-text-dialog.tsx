@@ -18,7 +18,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { Alert } from '../../../../../components/alert';
-import { useCoreApi } from '../../../../../hooks/useCoreApi';
 import { useInstructorApi } from '../../../../../hooks/useInstructorApi';
 import { RichTextEditor } from './rich-text-editor';
 
@@ -47,8 +46,7 @@ export function EditLessonTextDialog({
   const [descriptionValue, setDescriptionValue] = useState(description ?? '');
   const [bodyValue, setBodyValue] = useState(body);
   const [saveError, setSaveError] = useState<string>();
-  const { course } = useCoreApi();
-  const { contentItem } = useInstructorApi();
+  const { course, contentItem } = useInstructorApi();
   const queryClient = useQueryClient();
 
   const { mutateAsync: createLessonContentItem, isPending: isCreating } =
@@ -194,16 +192,19 @@ export function RemoveLessonTextButton({
   lessonId,
   contentItemId,
   title,
+  archive,
 }: {
   courseId: string;
   moduleId: string;
   lessonId: string;
   contentItemId: string;
   title: string;
+  // Outside a draft course, removing archives the text instead: students
+  // stop seeing it, but it and their data for it are kept and restorable.
+  archive: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const { course } = useCoreApi();
-  const { contentItem } = useInstructorApi();
+  const { course, contentItem } = useInstructorApi();
   const queryClient = useQueryClient();
   const {
     mutateAsync: removeContentItem,
@@ -236,14 +237,21 @@ export function RemoveLessonTextButton({
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Remove text</DialogTitle>
+          <DialogTitle>{archive ? 'Archive text' : 'Remove text'}</DialogTitle>
           <p className="text-sm text-muted-foreground">
-            Are you sure you want to remove "{title}"? This can't be undone.
+            {archive
+              ? `Students will no longer see "${title}". Their progress is kept, and the text can be restored.`
+              : `Are you sure you want to remove "${title}"? This can't be undone.`}
           </p>
         </DialogHeader>
 
         {isError && (
-          <Alert type="error" header="Couldn't remove the text">
+          <Alert
+            type="error"
+            header={
+              archive ? "Couldn't archive the text" : "Couldn't remove the text"
+            }
+          >
             {error.message}
           </Alert>
         )}
@@ -258,7 +266,7 @@ export function RemoveLessonTextButton({
           </Button>
           <Button
             type="button"
-            variant="destructive"
+            variant={archive ? 'default' : 'destructive'}
             disabled={isPending}
             onClick={async () => {
               try {
@@ -278,7 +286,13 @@ export function RemoveLessonTextButton({
               });
             }}
           >
-            {isPending ? 'Removing...' : 'Remove text'}
+            {archive
+              ? isPending
+                ? 'Archiving...'
+                : 'Archive text'
+              : isPending
+                ? 'Removing...'
+                : 'Remove text'}
           </Button>
         </DialogFooter>
       </DialogContent>

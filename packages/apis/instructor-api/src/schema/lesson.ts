@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { z } from 'zod';
+import { CurriculumVisibilitySchema } from './visibility.js';
 
 export const LessonSchema = z.object({
   lessonId: z.string(),
@@ -11,6 +12,8 @@ export const LessonSchema = z.object({
   title: z.string(),
   description: z.string().optional(),
   order: z.number(),
+  visibility: CurriculumVisibilitySchema,
+  archivedAt: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -56,3 +59,45 @@ export type IDeleteLessonInput = z.output<typeof DeleteLessonInputSchema>;
 export const DeleteLessonOutputSchema = LessonSchema;
 
 export type IDeleteLessonOutput = z.output<typeof DeleteLessonOutputSchema>;
+
+const LessonKeySchema = z.object({
+  courseId: z.string(),
+  moduleId: z.string(),
+  lessonId: z.string(),
+});
+
+export const PublishLessonInputSchema = LessonKeySchema;
+
+export type IPublishLessonInput = z.output<typeof PublishLessonInputSchema>;
+
+export const PublishLessonOutputSchema = LessonSchema;
+
+export type IPublishLessonOutput = z.output<typeof PublishLessonOutputSchema>;
+
+export const HideLessonInputSchema = LessonKeySchema;
+
+export type IHideLessonInput = z.output<typeof HideLessonInputSchema>;
+
+export const HideLessonOutputSchema = LessonSchema;
+
+export type IHideLessonOutput = z.output<typeof HideLessonOutputSchema>;
+
+export const RestoreLessonInputSchema = LessonKeySchema;
+
+export type IRestoreLessonInput = z.output<typeof RestoreLessonInputSchema>;
+
+export const RestoreLessonOutputSchema = LessonSchema;
+
+export type IRestoreLessonOutput = z.output<typeof RestoreLessonOutputSchema>;
+
+export const DeleteLessonPermanentlyInputSchema = LessonKeySchema;
+
+export type IDeleteLessonPermanentlyInput = z.output<
+  typeof DeleteLessonPermanentlyInputSchema
+>;
+
+export const DeleteLessonPermanentlyOutputSchema = LessonSchema;
+
+export type IDeleteLessonPermanentlyOutput = z.output<
+  typeof DeleteLessonPermanentlyOutputSchema
+>;

@@ -346,19 +346,20 @@ export class ApplicationStack extends Stack {
       instructorApiIntegrations['contentItem.updateVideo'].handler,
     );
     // Deleting a lesson or module cascades to its content items, best-
-    // effort-deleting each one's underlying S3 object.
-    lessonMediaBucket.grantRead(
-      instructorApiIntegrations['lesson.delete'].handler,
-    );
-    lessonMediaBucket.grantDelete(
-      instructorApiIntegrations['lesson.delete'].handler,
-    );
-    lessonMediaBucket.grantRead(
-      instructorApiIntegrations['module.delete'].handler,
-    );
-    lessonMediaBucket.grantDelete(
-      instructorApiIntegrations['module.delete'].handler,
-    );
+    // effort-deleting each one's underlying S3 object -- as does every
+    // permanent delete of an archived content item, lesson or module.
+    for (const procedure of [
+      'lesson.delete',
+      'module.delete',
+      'contentItem.deletePermanently',
+      'lesson.deletePermanently',
+      'module.deletePermanently',
+    ] as const) {
+      lessonMediaBucket.grantRead(instructorApiIntegrations[procedure].handler);
+      lessonMediaBucket.grantDelete(
+        instructorApiIntegrations[procedure].handler,
+      );
+    }
 
     return lessonMediaBucket;
   }
@@ -412,12 +413,17 @@ export class ApplicationStack extends Stack {
     lessonMediaUploadBucket.grantDelete(
       instructorApiIntegrations['contentItem.updateVideo'].handler,
     );
-    lessonMediaUploadBucket.grantDelete(
-      instructorApiIntegrations['lesson.delete'].handler,
-    );
-    lessonMediaUploadBucket.grantDelete(
-      instructorApiIntegrations['module.delete'].handler,
-    );
+    for (const procedure of [
+      'lesson.delete',
+      'module.delete',
+      'contentItem.deletePermanently',
+      'lesson.deletePermanently',
+      'module.deletePermanently',
+    ] as const) {
+      lessonMediaUploadBucket.grantDelete(
+        instructorApiIntegrations[procedure].handler,
+      );
+    }
 
     return lessonMediaUploadBucket;
   }
@@ -507,6 +513,10 @@ export class ApplicationStack extends Stack {
       instructorApiIntegrations['contentItem.delete'].handler,
       instructorApiIntegrations['lesson.delete'].handler,
       instructorApiIntegrations['module.delete'].handler,
+      // Permanently deleting an archived record runs the same cascade.
+      instructorApiIntegrations['contentItem.deletePermanently'].handler,
+      instructorApiIntegrations['lesson.deletePermanently'].handler,
+      instructorApiIntegrations['module.deletePermanently'].handler,
     ];
   }
 

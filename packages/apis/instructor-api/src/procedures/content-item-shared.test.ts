@@ -8,12 +8,14 @@ import { t } from '../init.js';
 import { deleteContentItem } from './content-item-shared.js';
 
 const {
+  courseGet,
   courseInstructorGet,
   contentItemGet,
   contentItemDelete,
   bestEffortDeleteContentItemVideos,
   bestEffortCancelTranscodeJobs,
 } = vi.hoisted(() => ({
+  courseGet: vi.fn(),
   courseInstructorGet: vi.fn(),
   contentItemGet: vi.fn(),
   contentItemDelete: vi.fn(),
@@ -24,6 +26,7 @@ const {
 vi.mock('@discava/core-table', () => ({
   createCoreTableService: vi.fn(async () => ({
     entities: {
+      course: { get: courseGet },
       courseInstructor: {
         get: courseInstructorGet,
       },
@@ -79,6 +82,8 @@ const videoContentItem = {
   s3Key: `courses/${COURSE_ID}/modules/${MODULE_ID}/lessons/${LESSON_ID}/content-items/${CONTENT_ITEM_ID}.mp4`,
   mimeType: 'video/mp4',
   order: 1,
+  visibility: 'visible' as const,
+  studentActivityCount: 0,
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
@@ -93,12 +98,21 @@ const textContentItem = {
   title: 'Welcome notes',
   body: JSON.stringify({ type: 'doc', content: [{ type: 'paragraph' }] }),
   order: 1,
+  visibility: 'visible' as const,
+  studentActivityCount: 0,
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+
+  // A draft course, so delete here is the permanent, cascading delete. What
+  // changes outside a draft course (archive instead) is covered in
+  // curriculum-lifecycle.test.ts.
+  courseGet.mockReturnValue({
+    go: vi.fn().mockResolvedValue({ data: { status: 'draft' } }),
+  });
 
   courseInstructorGet.mockReturnValue({
     go: vi.fn().mockResolvedValue({

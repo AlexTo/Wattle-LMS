@@ -29,7 +29,8 @@ const {
   curriculumCollection: vi.fn(),
 }));
 
-vi.mock('@discava/core-table', () => ({
+vi.mock('@discava/core-table', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@discava/core-table')>()),
   createCoreTableService: vi.fn(async () => ({
     entities: {
       course: {
@@ -75,6 +76,14 @@ const callAnonymously = () =>
     context: {} as any,
     info: {} as any,
   });
+
+// Curriculum records as stored: every module, lesson and content item has a
+// visibility. Output schemas don't expose it to students, so expectations use
+// the plain fixtures.
+const visible = <T extends object>(record: T) => ({
+  ...record,
+  visibility: 'visible' as const,
+});
 
 const course = {
   courseId: 'course-1',
@@ -327,6 +336,10 @@ describe('viewCourse', () => {
     expect(curriculumCollection).toHaveBeenCalledWith({
       courseId: course.courseId,
     });
+    // Every page, not just the first: a curriculum can exceed 1 MB.
+    expect(curriculumCollection.mock.results[0].value.go).toHaveBeenCalledWith({
+      pages: 'all',
+    });
     expect(result).toEqual({ ...course, modules: [] });
   });
 
@@ -382,9 +395,9 @@ describe('viewCourse', () => {
       go: vi.fn().mockResolvedValue({
         data: {
           course: [course],
-          module: [module1],
-          lesson: [lesson1],
-          contentItem: [contentItem1, contentItem2],
+          module: [module1].map(visible),
+          lesson: [lesson1].map(visible),
+          contentItem: [contentItem1, contentItem2].map(visible),
         },
       }),
     });
@@ -441,8 +454,8 @@ describe('viewCourse', () => {
       go: vi.fn().mockResolvedValue({
         data: {
           course: [course],
-          module: [module1, module2],
-          lesson: [lesson1, lesson2],
+          module: [module1, module2].map(visible),
+          lesson: [lesson1, lesson2].map(visible),
           contentItem: [],
         },
       }),
@@ -475,6 +488,111 @@ describe('viewCourse', () => {
     await expect(
       callAsUser().viewCourse({ courseId: 'missing' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  // Invariant: students never see a module, lesson or content item that is
+  // hidden or archived, or that sits under a hidden or archived ancestor.
+  it('omits hidden and archived records and everything under them', async () => {
+    const base = {
+      courseId: course.courseId,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+    };
+    const shownModule = {
+      ...base,
+      moduleId: 'module-shown',
+      title: 'Shown module',
+      order: 1,
+    };
+    const shownLesson = {
+      ...base,
+      moduleId: 'module-shown',
+      lessonId: 'lesson-shown',
+      title: 'Shown lesson',
+      order: 1,
+    };
+    const shownItem = {
+      ...base,
+      moduleId: 'module-shown',
+      lessonId: 'lesson-shown',
+      contentItemId: 'item-shown',
+      type: 'text' as const,
+      status: 'ready' as const,
+      title: 'Shown item',
+      body: '{}',
+      order: 1,
+    };
+    const textItem = (lessonId: string, contentItemId: string) => ({
+      ...shownItem,
+      lessonId,
+      contentItemId,
+      title: contentItemId,
+    });
+    curriculumCollection.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: {
+          course: [course],
+          module: [
+            visible(shownModule),
+            {
+              ...shownModule,
+              moduleId: 'module-hidden',
+              visibility: 'hidden',
+            },
+            {
+              ...visible(shownModule),
+              moduleId: 'module-archived',
+              archivedAt: '2024-02-01T00:00:00.000Z',
+            },
+          ],
+          lesson: [
+            visible(shownLesson),
+            { ...shownLesson, lessonId: 'lesson-hidden', visibility: 'hidden' },
+            {
+              ...visible(shownLesson),
+              lessonId: 'lesson-archived',
+              archivedAt: '2024-02-01T00:00:00.000Z',
+            },
+            visible({
+              ...shownLesson,
+              moduleId: 'module-hidden',
+              lessonId: 'lesson-under-hidden-module',
+            }),
+          ],
+          contentItem: [
+            visible(shownItem),
+            {
+              ...textItem('lesson-shown', 'item-hidden'),
+              visibility: 'hidden',
+            },
+            {
+              ...visible(textItem('lesson-shown', 'item-archived')),
+              archivedAt: '2024-02-01T00:00:00.000Z',
+            },
+            visible(textItem('lesson-hidden', 'item-under-hidden-lesson')),
+            visible(textItem('lesson-archived', 'item-under-archived-lesson')),
+            visible(
+              textItem(
+                'lesson-under-hidden-module',
+                'item-under-hidden-module',
+              ),
+            ),
+          ],
+        },
+      }),
+    });
+
+    const result = await callAsUser().viewCourse({ courseId: course.courseId });
+
+    expect(result).toEqual({
+      ...course,
+      modules: [
+        {
+          ...shownModule,
+          lessons: [{ ...shownLesson, contentItems: [shownItem] }],
+        },
+      ],
+    });
   });
 });
 
@@ -563,8 +681,8 @@ describe('publicViewCourse', () => {
       go: vi.fn().mockResolvedValue({
         data: {
           course: [publishedCourse],
-          module: [module1, module2],
-          lesson: [lesson1, lesson2],
+          module: [module1, module2].map(visible),
+          lesson: [lesson1, lesson2].map(visible),
           // Content items exist but must not appear in the response.
           contentItem: [
             {
@@ -588,12 +706,81 @@ describe('publicViewCourse', () => {
       courseId: publishedCourse.courseId,
     });
 
+    // Every page, not just the first: a curriculum can exceed 1 MB.
+    expect(curriculumCollection.mock.results[0].value.go).toHaveBeenCalledWith({
+      pages: 'all',
+    });
     expect(result).toEqual({
       ...publishedCourse,
       modules: [
         { ...module2, lessons: [lesson2, lesson1] },
         { ...module1, lessons: [] },
       ],
+    });
+  });
+
+  it('omits hidden and archived modules and lessons, and lessons under them', async () => {
+    const base = {
+      courseId: publishedCourse.courseId,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+    };
+    const shownModule = {
+      ...base,
+      moduleId: 'module-shown',
+      title: 'Shown module',
+      order: 1,
+    };
+    const shownLesson = {
+      ...base,
+      moduleId: 'module-shown',
+      lessonId: 'lesson-shown',
+      title: 'Shown lesson',
+      order: 1,
+    };
+    curriculumCollection.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: {
+          course: [publishedCourse],
+          module: [
+            visible(shownModule),
+            {
+              ...shownModule,
+              moduleId: 'module-hidden',
+              visibility: 'hidden',
+            },
+            {
+              ...visible(shownModule),
+              moduleId: 'module-archived',
+              archivedAt: '2024-02-01T00:00:00.000Z',
+            },
+          ],
+          lesson: [
+            visible(shownLesson),
+            { ...shownLesson, lessonId: 'lesson-hidden', visibility: 'hidden' },
+            {
+              ...visible(shownLesson),
+              lessonId: 'lesson-archived',
+              archivedAt: '2024-02-01T00:00:00.000Z',
+            },
+            visible({
+              ...shownLesson,
+              moduleId: 'module-archived',
+              lessonId: 'lesson-under-archived-module',
+            }),
+          ],
+          contentItem: [],
+        },
+      }),
+    });
+
+    const result = await callAnonymously().publicViewCourse({
+      courseId: publishedCourse.courseId,
+    });
+
+    expect(result).toEqual({
+      ...publishedCourse,
+      modules: [{ ...shownModule, lessons: [shownLesson] }],
     });
   });
 });

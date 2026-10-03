@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { z } from 'zod';
+import { CurriculumVisibilitySchema } from './visibility.js';
 
 const isValidJson = (value: string) => {
   try {
@@ -24,6 +25,9 @@ const ContentItemBaseSchema = {
   title: z.string(),
   description: z.string().optional(),
   order: z.number(),
+  visibility: CurriculumVisibilitySchema,
+  archivedAt: z.string().optional(),
+  studentActivityCount: z.number(),
   createdAt: z.string(),
   updatedAt: z.string(),
 };
@@ -196,4 +200,57 @@ export const DeleteContentItemOutputSchema = ContentItemSchema;
 
 export type IDeleteContentItemOutput = z.output<
   typeof DeleteContentItemOutputSchema
+>;
+
+const ContentItemKeySchema = z.object({
+  courseId: z.string(),
+  moduleId: z.string(),
+  lessonId: z.string(),
+  contentItemId: z.string(),
+});
+
+export const PublishContentItemInputSchema = ContentItemKeySchema;
+
+export type IPublishContentItemInput = z.output<
+  typeof PublishContentItemInputSchema
+>;
+
+export const PublishContentItemOutputSchema = ContentItemSchema;
+
+export type IPublishContentItemOutput = z.output<
+  typeof PublishContentItemOutputSchema
+>;
+
+export const HideContentItemInputSchema = ContentItemKeySchema;
+
+export type IHideContentItemInput = z.output<typeof HideContentItemInputSchema>;
+
+export const HideContentItemOutputSchema = ContentItemSchema;
+
+export type IHideContentItemOutput = z.output<
+  typeof HideContentItemOutputSchema
+>;
+
+export const RestoreContentItemInputSchema = ContentItemKeySchema;
+
+export type IRestoreContentItemInput = z.output<
+  typeof RestoreContentItemInputSchema
+>;
+
+export const RestoreContentItemOutputSchema = ContentItemSchema;
+
+export type IRestoreContentItemOutput = z.output<
+  typeof RestoreContentItemOutputSchema
+>;
+
+export const DeleteContentItemPermanentlyInputSchema = ContentItemKeySchema;
+
+export type IDeleteContentItemPermanentlyInput = z.output<
+  typeof DeleteContentItemPermanentlyInputSchema
+>;
+
+export const DeleteContentItemPermanentlyOutputSchema = ContentItemSchema;
+
+export type IDeleteContentItemPermanentlyOutput = z.output<
+  typeof DeleteContentItemPermanentlyOutputSchema
 >;
