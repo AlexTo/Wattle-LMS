@@ -8,10 +8,12 @@ import { TRPCError } from '@trpc/server';
 import { courseProcedure } from '../init.js';
 import {
   getCourseOrThrow,
+  isConditionalCheckFailed,
   isDraftCourse,
   requireAncestorsNotArchived,
   requireCourseInstructor,
   requireNotArchived,
+  writeUnderActiveAncestors,
 } from '../lib/course-lifecycle.js';
 import {
   bestEffortCancelTranscodeJobs,
@@ -60,13 +62,41 @@ interface ContentItemKey {
 export const asContentItemOutput = <T>(contentItem: unknown) =>
   contentItem as T;
 
-// A DynamoDB conditional write whose condition didn't hold, as opposed to
-// any other failure.
-const isConditionalCheckFailed = (error: unknown): boolean =>
-  error instanceof Error &&
-  'cause' in error &&
-  error.cause instanceof Error &&
-  error.cause.name === 'ConditionalCheckFailedException';
+// Sets the item's visibility in one transaction with checks that its module
+// and lesson are still active, conditioned on the item itself still not
+// being archived, so an archive landing after the caller's own checks can't
+// be written past.
+const setVisibilityUnderActiveAncestors = async (
+  coreTable: CoreTable,
+  key: ContentItemKey,
+  visibility: 'hidden' | 'visible',
+  archivedMessage: string,
+) => {
+  await writeUnderActiveAncestors(
+    coreTable,
+    key,
+    (entities) => [
+      entities.contentItem
+        .patch(key)
+        .set({ visibility })
+        .where((attr, op) => op.notExists(attr.archivedAt))
+        .commit(),
+    ],
+    async () => {
+      requireNotArchived(
+        await getContentItemOrThrow(coreTable, key),
+        archivedMessage,
+      );
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message:
+          'The content item was modified by another request; please retry',
+      });
+    },
+  );
+  // Transactions don't return the written attributes.
+  return getContentItemOrThrow(coreTable, key);
+};
 
 const getContentItemOrThrow = async (
   coreTable: CoreTable,
@@ -174,12 +204,14 @@ export const publishContentItem = courseProcedure
       return asContentItemOutput<IPublishContentItemOutput>(existing);
     }
 
-    const { data: contentItem } = await coreTable.entities.contentItem
-      .patch(key)
-      .set({ visibility: 'visible' })
-      .go({ response: 'all_new' });
-
-    return asContentItemOutput<IPublishContentItemOutput>(contentItem);
+    return asContentItemOutput<IPublishContentItemOutput>(
+      await setVisibilityUnderActiveAncestors(
+        coreTable,
+        key,
+        'visible',
+        'Restore the content item before publishing it',
+      ),
+    );
   });
 
 export const hideContentItem = courseProcedure
@@ -198,12 +230,14 @@ export const hideContentItem = courseProcedure
       return asContentItemOutput<IHideContentItemOutput>(existing);
     }
 
-    const { data: contentItem } = await coreTable.entities.contentItem
-      .patch(key)
-      .set({ visibility: 'hidden' })
-      .go({ response: 'all_new' });
-
-    return asContentItemOutput<IHideContentItemOutput>(contentItem);
+    return asContentItemOutput<IHideContentItemOutput>(
+      await setVisibilityUnderActiveAncestors(
+        coreTable,
+        key,
+        'hidden',
+        'Restore the content item before hiding it',
+      ),
+    );
   });
 
 // A content item under an archived lesson or module can't be restored on its
@@ -235,12 +269,17 @@ export const restoreContentItem = courseProcedure
 
     // `order` was never touched by archiving, so the item returns to its
     // original position.
-    const { data: contentItem } = await coreTable.entities.contentItem
-      .patch(key)
-      .remove(['archivedAt'])
-      .go({ response: 'all_new' });
+    // Conditioned on the module and lesson still being active, so one
+    // archived after the checks above doesn't end up with an active item
+    // under it.
+    await writeUnderActiveAncestors(coreTable, key, (entities) => [
+      entities.contentItem.patch(key).remove(['archivedAt']).commit(),
+    ]);
 
-    return asContentItemOutput<IRestoreContentItemOutput>(contentItem);
+    // Transactions don't return the written attributes.
+    return asContentItemOutput<IRestoreContentItemOutput>(
+      await getContentItemOrThrow(coreTable, key),
+    );
   });
 
 // Removes an archived content item for good. Refused once any student has

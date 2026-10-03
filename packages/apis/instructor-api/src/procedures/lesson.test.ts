@@ -159,14 +159,14 @@ beforeEach(() => {
   lessonQueryPrimary.mockReturnValue({
     go: vi.fn().mockResolvedValue({ data: [] }),
   });
-  lessonCreate.mockReturnValue({
-    go: vi.fn().mockResolvedValue({ data: lesson }),
-  });
+  // Creates and edits are written in a transaction (behind a check that
+  // the module is still active), so their chains end in .commit().
+  lessonCreate.mockReturnValue({ commit: () => ({}) });
   lessonGet.mockReturnValue({
     go: vi.fn().mockResolvedValue({ data: lesson }),
   });
   lessonPatchSet.mockReturnValue({
-    go: vi.fn().mockResolvedValue({ data: lesson }),
+    where: () => ({ commit: () => ({}) }),
   });
   lessonPatch.mockReturnValue({ set: lessonPatchSet });
   lessonDelete.mockImplementation((attrs) => ({
@@ -186,7 +186,14 @@ beforeEach(() => {
   bestEffortCancelTranscodeJobs.mockResolvedValue(undefined);
   transactionWrite.mockImplementation((fn) => {
     fn({
-      lesson: { delete: lessonDelete },
+      module: {
+        check: () => ({ where: () => ({ commit: () => ({}) }) }),
+      },
+      lesson: {
+        create: lessonCreate,
+        patch: lessonPatch,
+        delete: lessonDelete,
+      },
       contentItem: { delete: contentItemDelete },
     });
     return { go: transactionGo };
@@ -388,11 +395,14 @@ describe('updateLesson', () => {
     });
   });
 
+  // The transaction returns no attributes, so the lesson is read back.
   it('returns the updated lesson', async () => {
     const updatedLesson = { ...lesson, title: 'Updated title' };
-    lessonPatchSet.mockReturnValue({
-      go: vi.fn().mockResolvedValue({ data: updatedLesson }),
-    });
+    lessonGet
+      .mockReturnValueOnce({ go: vi.fn().mockResolvedValue({ data: lesson }) })
+      .mockReturnValueOnce({
+        go: vi.fn().mockResolvedValue({ data: updatedLesson }),
+      });
 
     const result = await callAs().updateLesson({
       courseId: COURSE_ID,

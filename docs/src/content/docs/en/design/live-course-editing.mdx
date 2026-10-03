@@ -175,6 +175,8 @@ An archived record, and everything under it, stays exactly as it was archived un
 
 Records under an archived module or lesson can still be archived themselves, and then deleted permanently.
 
+These rules hold even when requests overlap. Each write under a module or lesson runs in one DynamoDB transaction, together with checks that its module (and lesson) still exist and aren't archived, and that the record itself isn't archived. If another request archives or deletes the parent in between, the whole write is refused with the same error, and nothing is written. So a module that's being archived or permanently deleted can't gain a new lesson, and a lesson can't gain a new item, at the last moment.
+
 A video archived while it's still transcoding keeps transcoding. When the job finishes, the item is marked `ready` (or `failed`) without touching `archivedAt` or `visibility`, so it plays if it's restored and stays hidden until then.
 
 ## Restoring

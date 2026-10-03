@@ -14,6 +14,7 @@ import {
   requireAncestorsNotArchived,
   requireCourseInstructor,
   requireNotArchived,
+  writeUnderActiveAncestors,
 } from '../lib/course-lifecycle.js';
 import { bestEffortCancelTranscodeJobs } from '../lib/mediaconvert-client.js';
 import { bestEffortDeleteContentItemVideos } from '../lib/s3-client.js';
@@ -54,6 +55,21 @@ const getLessonOrThrow = async (coreTable: CoreTable, key: LessonKey) => {
 // Every page is read (a query returns at most 1 MB per page), since callers
 // act on the whole set: a missed page would be left unpublished, or escape
 // the student-activity check and be orphaned by a permanent delete.
+// After a guarded write was refused by the lesson's own condition: reports
+// why, from its current state.
+const throwForLessonState = async (
+  coreTable: CoreTable,
+  key: LessonKey,
+  archivedMessage: string,
+): Promise<never> => {
+  const lesson = await getLessonOrThrow(coreTable, key);
+  requireNotArchived(lesson, archivedMessage);
+  throw new TRPCError({
+    code: 'CONFLICT',
+    message: 'The lesson was modified by another request; please retry',
+  });
+};
+
 const queryLessonContentItems = async (
   coreTable: CoreTable,
   key: LessonKey,
@@ -191,19 +207,30 @@ export const createLesson = courseProcedure
     const order =
       lessons.reduce((max, lesson) => Math.max(max, lesson.order), 0) + 1;
 
-    const { data: lesson } = await coreTable.entities.lesson
-      .create({
-        lessonId: uuidv7(),
-        moduleId,
-        courseId,
-        title,
-        description,
-        order,
-        visibility: initialVisibility(course),
-      })
-      .go();
+    // Created in the same transaction as a check that the module is still
+    // there and not archived, so a module archived or deleted after the
+    // check above can't end up with a new lesson.
+    const lessonId = uuidv7();
+    await writeUnderActiveAncestors(
+      coreTable,
+      { courseId, moduleId },
+      (entities) => [
+        entities.lesson
+          .create({
+            lessonId,
+            moduleId,
+            courseId,
+            title,
+            description,
+            order,
+            visibility: initialVisibility(course),
+          })
+          .commit(),
+      ],
+    );
 
-    return lesson;
+    // Transactions don't return the written attributes.
+    return getLessonOrThrow(coreTable, { courseId, moduleId, lessonId });
   });
 
 export const updateLesson = courseProcedure
@@ -222,16 +249,34 @@ export const updateLesson = courseProcedure
     requireNotArchived(existing, 'Restore the lesson before editing it');
     await requireAncestorsNotArchived(coreTable, { courseId, moduleId });
 
-    const { data: lesson } = await coreTable.entities.lesson
-      .patch({ courseId, moduleId, lessonId })
-      .set({
-        ...(title !== undefined && { title }),
-        ...(description !== undefined && { description }),
-        ...(order !== undefined && { order }),
-      })
-      .go({ response: 'all_new' });
+    const key = { courseId, moduleId, lessonId };
+    // Conditioned, in one transaction, on the module still being active and
+    // the lesson still not archived, so an archive landing after the checks
+    // above can't be edited past.
+    await writeUnderActiveAncestors(
+      coreTable,
+      { courseId, moduleId },
+      (entities) => [
+        entities.lesson
+          .patch(key)
+          .set({
+            ...(title !== undefined && { title }),
+            ...(description !== undefined && { description }),
+            ...(order !== undefined && { order }),
+          })
+          .where((attr, op) => op.notExists(attr.archivedAt))
+          .commit(),
+      ],
+      () =>
+        throwForLessonState(
+          coreTable,
+          key,
+          'Restore the lesson before editing it',
+        ),
+    );
 
-    return lesson;
+    // Transactions don't return the written attributes.
+    return getLessonOrThrow(coreTable, key);
   });
 
 // In a draft course this is a permanent, cascading delete. In any other
@@ -302,12 +347,12 @@ export const publishLesson = courseProcedure
     ).filter((item) => item.visibility === 'hidden' && !item.archivedAt);
     const publishLessonItself = existing.visibility === 'hidden';
 
-    const writeCount =
-      (publishLessonItself ? 1 : 0) + contentItemsToPublish.length;
-    if (writeCount === 0) {
+    if (!publishLessonItself && contentItemsToPublish.length === 0) {
       return existing;
     }
-    if (writeCount > MAX_TRANSACTION_ITEMS) {
+    // The transaction also carries a check on the module, and a write or
+    // check on the lesson itself.
+    if (2 + contentItemsToPublish.length > MAX_TRANSACTION_ITEMS) {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
         message:
@@ -315,27 +360,39 @@ export const publishLesson = courseProcedure
       });
     }
 
-    const { canceled } = await coreTable.transaction
-      .write((entities) => [
-        ...(publishLessonItself
-          ? [entities.lesson.patch(key).set({ visibility: 'visible' }).commit()]
-          : []),
+    // Conditioned on the module still being active and the lesson still not
+    // archived, so an archive landing after the checks above can't be
+    // published past. Any other cancellation -- most likely a content item
+    // deleted between the query and the transaction (patch requires the
+    // record to exist) -- is a CONFLICT to retry.
+    await writeUnderActiveAncestors(
+      coreTable,
+      { courseId, moduleId },
+      (entities) => [
+        publishLessonItself
+          ? entities.lesson
+              .patch(key)
+              .set({ visibility: 'visible' })
+              .where((attr, op) => op.notExists(attr.archivedAt))
+              .commit()
+          : entities.lesson
+              .check(key)
+              .where((attr, op) => op.notExists(attr.archivedAt))
+              .commit(),
         ...contentItemsToPublish.map(({ contentItemId }) =>
           entities.contentItem
             .patch({ ...key, contentItemId })
             .set({ visibility: 'visible' })
             .commit(),
         ),
-      ])
-      .go();
-    if (canceled) {
-      // Most likely a content item deleted between the query and the
-      // transaction (patch requires the record to exist).
-      throw new TRPCError({
-        code: 'CONFLICT',
-        message: 'The lesson changed while it was being published; retry',
-      });
-    }
+      ],
+      () =>
+        throwForLessonState(
+          coreTable,
+          key,
+          'Restore the lesson before publishing it',
+        ),
+    );
 
     // Transactions don't return the written attributes.
     return getLessonOrThrow(coreTable, key);
@@ -362,12 +419,29 @@ export const hideLesson = courseProcedure
       return existing;
     }
 
-    const { data: lesson } = await coreTable.entities.lesson
-      .patch(key)
-      .set({ visibility: 'hidden' })
-      .go({ response: 'all_new' });
+    // Conditioned on the module still being active and the lesson still not
+    // archived, so an archive landing after the checks above can't be
+    // hidden past.
+    await writeUnderActiveAncestors(
+      coreTable,
+      { courseId, moduleId },
+      (entities) => [
+        entities.lesson
+          .patch(key)
+          .set({ visibility: 'hidden' })
+          .where((attr, op) => op.notExists(attr.archivedAt))
+          .commit(),
+      ],
+      () =>
+        throwForLessonState(
+          coreTable,
+          key,
+          'Restore the lesson before hiding it',
+        ),
+    );
 
-    return lesson;
+    // Transactions don't return the written attributes.
+    return getLessonOrThrow(coreTable, key);
   });
 
 // A lesson under an archived module can't be restored on its own: it would
@@ -396,12 +470,18 @@ export const restoreLesson = courseProcedure
 
     // `order` was never touched by archiving, so the lesson returns to its
     // original position.
-    const { data: lesson } = await coreTable.entities.lesson
-      .patch(key)
-      .remove(['archivedAt'])
-      .go({ response: 'all_new' });
+    // Conditioned on the module still being active, so a module archived
+    // after the check above doesn't end up with an active lesson under it.
+    await writeUnderActiveAncestors(
+      coreTable,
+      { courseId, moduleId },
+      (entities) => [
+        entities.lesson.patch(key).remove(['archivedAt']).commit(),
+      ],
+    );
 
-    return lesson;
+    // Transactions don't return the written attributes.
+    return getLessonOrThrow(coreTable, key);
   });
 
 // Removes an archived lesson and its content items for good. Refused while

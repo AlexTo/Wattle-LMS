@@ -9,6 +9,7 @@ import { courseProcedure } from '../init.js';
 import {
   getCourseOrThrow,
   initialVisibility,
+  isConditionalCheckFailed,
   isDraftCourse,
   MAX_TRANSACTION_ITEMS,
   requireCourseInstructor,
@@ -48,6 +49,37 @@ const getModuleOrThrow = async (
     throw new TRPCError({ code: 'NOT_FOUND' });
   }
   return module;
+};
+
+// Patches a module only while it's still not archived, so an archive landing
+// after the caller's own check can't be written past.
+const patchUnarchivedModule = async (
+  coreTable: CoreTable,
+  courseId: string,
+  moduleId: string,
+  set: { title?: string; description?: string; order?: number } & {
+    visibility?: 'hidden' | 'visible';
+  },
+  archivedMessage: string,
+) => {
+  try {
+    const { data: module } = await coreTable.entities.module
+      .patch({ courseId, moduleId })
+      .set(set)
+      .where((attr, op) => op.notExists(attr.archivedAt))
+      .go({ response: 'all_new' });
+    return module;
+  } catch (error) {
+    if (!isConditionalCheckFailed(error)) {
+      throw error;
+    }
+    const module = await getModuleOrThrow(coreTable, courseId, moduleId);
+    requireNotArchived(module, archivedMessage);
+    throw new TRPCError({
+      code: 'CONFLICT',
+      message: 'The module was modified by another request; please retry',
+    });
+  }
 };
 
 // Content items share the same sk prefix as their parent lesson (moduleId,
@@ -212,16 +244,17 @@ export const updateModule = courseProcedure
     const existing = await getModuleOrThrow(coreTable, courseId, moduleId);
     requireNotArchived(existing, 'Restore the module before editing it');
 
-    const { data: module } = await coreTable.entities.module
-      .patch({ courseId, moduleId })
-      .set({
+    return patchUnarchivedModule(
+      coreTable,
+      courseId,
+      moduleId,
+      {
         ...(title !== undefined && { title }),
         ...(description !== undefined && { description }),
         ...(order !== undefined && { order }),
-      })
-      .go({ response: 'all_new' });
-
-    return module;
+      },
+      'Restore the module before editing it',
+    );
   });
 
 // In a draft course this is a permanent, cascading delete. In any other
@@ -309,14 +342,18 @@ export const publishModule = courseProcedure
     );
     const publishModuleItself = existing.visibility === 'hidden';
 
-    const writeCount =
-      (publishModuleItself ? 1 : 0) +
-      lessonsToPublish.length +
-      contentItemsToPublish.length;
-    if (writeCount === 0) {
+    if (
+      !publishModuleItself &&
+      lessonsToPublish.length === 0 &&
+      contentItemsToPublish.length === 0
+    ) {
       return existing;
     }
-    if (writeCount > MAX_TRANSACTION_ITEMS) {
+    // The transaction always carries a write or check on the module itself.
+    if (
+      1 + lessonsToPublish.length + contentItemsToPublish.length >
+      MAX_TRANSACTION_ITEMS
+    ) {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
         message:
@@ -324,16 +361,20 @@ export const publishModule = courseProcedure
       });
     }
 
-    const { canceled } = await coreTable.transaction
+    // The module goes first, conditioned on still not being archived, so an
+    // archive landing after the check above can't be published past.
+    const { canceled, data: transactionResults } = await coreTable.transaction
       .write((entities) => [
-        ...(publishModuleItself
-          ? [
-              entities.module
-                .patch({ courseId, moduleId })
-                .set({ visibility: 'visible' })
-                .commit(),
-            ]
-          : []),
+        publishModuleItself
+          ? entities.module
+              .patch({ courseId, moduleId })
+              .set({ visibility: 'visible' })
+              .where((attr, op) => op.notExists(attr.archivedAt))
+              .commit()
+          : entities.module
+              .check({ courseId, moduleId })
+              .where((attr, op) => op.notExists(attr.archivedAt))
+              .commit(),
         ...lessonsToPublish.map(({ lessonId }) =>
           entities.lesson
             .patch({ courseId, moduleId, lessonId })
@@ -349,8 +390,12 @@ export const publishModule = courseProcedure
       ])
       .go();
     if (canceled) {
-      // Most likely a lesson or content item deleted between the query and
-      // the transaction (patch requires the record to exist).
+      if (transactionResults?.[0]?.code === 'ConditionalCheckFailed') {
+        const module = await getModuleOrThrow(coreTable, courseId, moduleId);
+        requireNotArchived(module, 'Restore the module before publishing it');
+      }
+      // Otherwise most likely a lesson or content item deleted between the
+      // query and the transaction (patch requires the record to exist).
       throw new TRPCError({
         code: 'CONFLICT',
         message: 'The module changed while it was being published; retry',
@@ -380,12 +425,13 @@ export const hideModule = courseProcedure
       return existing;
     }
 
-    const { data: module } = await coreTable.entities.module
-      .patch({ courseId, moduleId })
-      .set({ visibility: 'hidden' })
-      .go({ response: 'all_new' });
-
-    return module;
+    return patchUnarchivedModule(
+      coreTable,
+      courseId,
+      moduleId,
+      { visibility: 'hidden' },
+      'Restore the module before hiding it',
+    );
   });
 
 export const restoreModule = courseProcedure

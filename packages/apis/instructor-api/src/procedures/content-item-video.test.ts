@@ -25,6 +25,9 @@ const {
   contentItemPatchRemove,
   contentItemPatchWhere,
   contentItemDelete,
+  moduleCheck,
+  lessonCheck,
+  transactionWrite,
   s3Send,
   getSignedUrl,
   resolveLessonMediaUploadBucketName,
@@ -48,6 +51,9 @@ const {
   contentItemPatchRemove: vi.fn(),
   contentItemPatchWhere: vi.fn(),
   contentItemDelete: vi.fn(),
+  moduleCheck: vi.fn(),
+  lessonCheck: vi.fn(),
+  transactionWrite: vi.fn(),
   s3Send: vi.fn(),
   getSignedUrl: vi.fn(),
   resolveLessonMediaUploadBucketName: vi.fn(),
@@ -83,6 +89,7 @@ vi.mock('@discava/core-table', () => ({
         delete: contentItemDelete,
       },
     },
+    transaction: { write: transactionWrite },
   })),
 }));
 
@@ -156,6 +163,72 @@ const conditionalCheckFailedError = (): Error =>
       name: 'ConditionalCheckFailedException',
     }),
   });
+
+// Gives a mocked ElectroDB chain the `.commit()` a transaction item needs,
+// at every step of the chain. Committing defers to that step's own `.go()`,
+// which the fake transaction below runs, so a test drives a transactional
+// write's outcome the same way as a direct one: by what its `.go()` does.
+const committable = (chain: any): any => {
+  if (chain === null || typeof chain !== 'object') {
+    return chain;
+  }
+  return new Proxy(chain, {
+    get(target, prop) {
+      if (prop === 'commit') {
+        return () => ({ run: () => target.go() });
+      }
+      const value = target[prop];
+      return typeof value === 'function' && prop !== 'go'
+        ? (...args: unknown[]) => committable(value.apply(target, args))
+        : value;
+    },
+  });
+};
+
+// The entities a `coreTable.transaction.write` builder receives. Writes go
+// through the same mocks as direct writes, so assertions on contentItemPatch/
+// contentItemPatchSet/contentItemPatchWhere/etc hold either way.
+const transactionEntities = {
+  module: { check: (key: unknown) => committable(moduleCheck(key)) },
+  lesson: { check: (key: unknown) => committable(lessonCheck(key)) },
+  contentItem: {
+    create: (item: unknown) => committable(contentItemCreate(item)),
+    patch: (key: unknown) => committable(contentItemPatch(key)),
+  },
+};
+
+const isConditionalCheckFailedError = (error: unknown) =>
+  error instanceof Error &&
+  error.cause instanceof Error &&
+  error.cause.name === 'ConditionalCheckFailedException';
+
+// Runs the transaction's items in order (ancestor checks first, as built).
+// An item whose `.go()` fails its condition cancels the transaction, reported
+// the way DynamoDB does: a per-item result with that item's code. Any other
+// failure rejects the transaction itself, like a transient DynamoDB error.
+const fakeTransactionWrite = (
+  build: (entities: typeof transactionEntities) => { run: () => unknown }[],
+) => {
+  const items = build(transactionEntities);
+  return {
+    go: async () => {
+      const data: { code: string }[] = [];
+      for (const item of items) {
+        try {
+          await item.run();
+          data.push({ code: 'None' });
+        } catch (error) {
+          if (!isConditionalCheckFailedError(error)) {
+            throw error;
+          }
+          data.push({ code: 'ConditionalCheckFailed' });
+          return { canceled: true, data };
+        }
+      }
+      return { canceled: false, data: [] };
+    },
+  };
+};
 
 const buildEvent = (groups: string[]): APIGatewayProxyEvent =>
   ({
@@ -267,6 +340,15 @@ beforeEach(() => {
       go: vi.fn().mockResolvedValue({ data: contentItem }),
     }),
   });
+  // The module and lesson are still there and not archived when the
+  // transaction lands, unless a test says otherwise.
+  moduleCheck.mockReturnValue({
+    where: () => ({ go: vi.fn().mockResolvedValue({}) }),
+  });
+  lessonCheck.mockReturnValue({
+    where: () => ({ go: vi.fn().mockResolvedValue({}) }),
+  });
+  transactionWrite.mockImplementation(fakeTransactionWrite);
   s3Send.mockResolvedValue({});
   getSignedUrl.mockResolvedValue('https://example.com/signed-url');
   resolveLessonMediaUploadBucketName.mockResolvedValue(BUCKET_NAME);
@@ -587,6 +669,36 @@ describe('createContentItemVideo', () => {
       callAs().createContentItemVideo(validInput),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(contentItemCreate).not.toHaveBeenCalled();
+  });
+
+  // The record is created in one transaction with checks on the module and
+  // lesson, so a module archived after the procedure's own checks cancels
+  // the create -- and no transcode is ever submitted for it.
+  it('refuses, without submitting a transcode, when the module is archived in the meantime', async () => {
+    moduleGet
+      .mockReturnValueOnce({
+        go: vi.fn().mockResolvedValue({
+          data: { moduleId: MODULE_ID, visibility: 'visible' },
+        }),
+      })
+      .mockReturnValue({
+        go: vi.fn().mockResolvedValue({
+          data: { moduleId: MODULE_ID, archivedAt: '2024-02-01T00:00:00.000Z' },
+        }),
+      });
+    moduleCheck.mockReturnValue({
+      where: () => ({
+        go: vi.fn().mockRejectedValue(conditionalCheckFailedError()),
+      }),
+    });
+
+    await expect(
+      callAs().createContentItemVideo(validInput),
+    ).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the module first',
+    });
+    expect(submitTranscodeJob).not.toHaveBeenCalled();
   });
 
   it('refuses to add a video under an archived module, before checking the upload', async () => {
@@ -919,6 +1031,34 @@ describe('updateContentItemVideo', () => {
     expect(contentItemPatch).not.toHaveBeenCalled();
   });
 
+  it('refuses a replacement, without touching MediaConvert, when the lesson is archived in the meantime', async () => {
+    lessonGet
+      .mockReturnValueOnce({ go: vi.fn().mockResolvedValue({ data: lesson }) })
+      .mockReturnValue({
+        go: vi.fn().mockResolvedValue({
+          data: { ...lesson, archivedAt: '2024-02-01T00:00:00.000Z' },
+        }),
+      });
+    lessonCheck.mockReturnValue({
+      where: () => ({
+        go: vi.fn().mockRejectedValue(conditionalCheckFailedError()),
+      }),
+    });
+
+    await expect(
+      callAs().updateContentItemVideo({
+        ...input,
+        objectKey: `${OBJECT_KEY_PREFIX}${CONTENT_ITEM_ID}/replacement.mp4`,
+        mimeType: 'video/mp4',
+      }),
+    ).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the lesson first',
+    });
+    expect(submitTranscodeJob).not.toHaveBeenCalled();
+    expect(bestEffortCancelTranscodeJobs).not.toHaveBeenCalled();
+  });
+
   it('refuses to edit a video in an archived lesson before any side effect', async () => {
     lessonGet.mockReturnValue({
       go: vi.fn().mockResolvedValue({
@@ -1049,17 +1189,20 @@ describe('updateContentItemVideo', () => {
     // unchanged (e.g. a retry after a lost response, with an edit made in
     // between). Those must still land.
     it('still applies supplied title/description edits, without touching the transcode', async () => {
-      contentItemGet.mockReturnValue({
-        go: vi.fn().mockResolvedValue({ data: inFlightItem }),
-      });
       const updatedItem = {
         ...inFlightItem,
         title: 'New title',
         description: 'New description',
       };
-      contentItemPatchWhere.mockReturnValue({
-        go: vi.fn().mockResolvedValue({ data: updatedItem }),
-      });
+      // The read before the write, then the re-read after it (transactions
+      // don't return the written record).
+      contentItemGet
+        .mockReturnValueOnce({
+          go: vi.fn().mockResolvedValue({ data: inFlightItem }),
+        })
+        .mockReturnValueOnce({
+          go: vi.fn().mockResolvedValue({ data: updatedItem }),
+        });
 
       const result = await callAs().updateContentItemVideo({
         ...input,
@@ -1098,16 +1241,22 @@ describe('updateContentItemVideo', () => {
 
       const [whereCallback] = contentItemPatchWhere.mock.calls[0]!;
       const eq = vi.fn((attr: string, value: string) => `${attr} = ${value}`);
+      const notExists = vi.fn(
+        (attr: string) => `attribute_not_exists(${attr})`,
+      );
       const result = whereCallback(
-        { submissionNonce: 'submissionNonce' },
-        { eq },
+        { submissionNonce: 'submissionNonce', archivedAt: 'archivedAt' },
+        { eq, notExists },
       );
 
       expect(eq).toHaveBeenCalledWith(
         'submissionNonce',
         inFlightItem.submissionNonce,
       );
-      expect(result).toBe(`submissionNonce = ${inFlightItem.submissionNonce}`);
+      expect(notExists).toHaveBeenCalledWith('archivedAt');
+      expect(result).toBe(
+        `submissionNonce = ${inFlightItem.submissionNonce} AND attribute_not_exists(archivedAt)`,
+      );
     });
 
     it('throws CONFLICT, rather than reporting success, when the metadata edit loses ownership of the submission', async () => {
@@ -1124,7 +1273,10 @@ describe('updateContentItemVideo', () => {
           objectKey: pendingObjectKey,
           title: 'New title',
         }),
-      ).rejects.toMatchObject({ code: 'CONFLICT' });
+      ).rejects.toMatchObject({
+        code: 'CONFLICT',
+        message: 'Content item was modified by another request; please retry',
+      });
       expect(bestEffortCancelTranscodeJobs).not.toHaveBeenCalled();
       expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
       expect(submitTranscodeJob).not.toHaveBeenCalled();
@@ -1614,12 +1766,15 @@ describe('updateContentItemVideo', () => {
   it('throws CONFLICT when another request has already changed status/s3Key (concurrent replace)', async () => {
     const newObjectKey = `${OBJECT_KEY_PREFIX}some-other-fresh-id.mp4`;
     contentItemPatchWhere.mockReturnValue({
-      go: vi.fn().mockRejectedValue(new Error('ConditionalCheckFailed')),
+      go: vi.fn().mockRejectedValue(conditionalCheckFailedError()),
     });
 
     await expect(
       callAs().updateContentItemVideo({ ...input, objectKey: newObjectKey }),
-    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    ).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: 'Content item was modified by another request; please retry',
+    });
     expect(submitTranscodeJob).not.toHaveBeenCalled();
   });
 
@@ -1632,7 +1787,7 @@ describe('updateContentItemVideo', () => {
   it('does not cancel the previous job when the replacement patch is rejected as a conflict', async () => {
     const newObjectKey = `${OBJECT_KEY_PREFIX}some-other-fresh-id.mp4`;
     contentItemPatchWhere.mockReturnValue({
-      go: vi.fn().mockRejectedValue(new Error('ConditionalCheckFailed')),
+      go: vi.fn().mockRejectedValue(conditionalCheckFailedError()),
     });
 
     await expect(
@@ -1651,12 +1806,16 @@ describe('updateContentItemVideo', () => {
 
     const [whereCallback] = contentItemPatchWhere.mock.calls[0]!;
     const eq = vi.fn((attr: string, value: string) => `${attr} = ${value}`);
-    const result = whereCallback({ status: 'status', s3Key: 's3Key' }, { eq });
+    const notExists = vi.fn((attr: string) => `attribute_not_exists(${attr})`);
+    const result = whereCallback(
+      { status: 'status', s3Key: 's3Key', archivedAt: 'archivedAt' },
+      { eq, notExists },
+    );
 
     expect(eq).toHaveBeenCalledWith('status', contentItem.status);
     expect(eq).toHaveBeenCalledWith('s3Key', contentItem.s3Key);
     expect(result).toBe(
-      `status = ${contentItem.status} AND s3Key = ${contentItem.s3Key}`,
+      `status = ${contentItem.status} AND s3Key = ${contentItem.s3Key} AND attribute_not_exists(archivedAt)`,
     );
   });
 
@@ -1686,14 +1845,20 @@ describe('updateContentItemVideo', () => {
 
     const [whereCallback] = contentItemPatchWhere.mock.calls[0]!;
     const eq = vi.fn((attr: string, value: string) => `${attr} = ${value}`);
+    const notExists = vi.fn((attr: string) => `attribute_not_exists(${attr})`);
     const result = whereCallback(
-      { status: 'status', s3Key: 's3Key', submissionNonce: 'submissionNonce' },
-      { eq },
+      {
+        status: 'status',
+        s3Key: 's3Key',
+        submissionNonce: 'submissionNonce',
+        archivedAt: 'archivedAt',
+      },
+      { eq, notExists },
     );
 
     expect(eq).toHaveBeenCalledWith('submissionNonce', 'nonce-1');
     expect(result).toBe(
-      `status = ${pendingItem.status} AND s3Key = ${pendingItem.s3Key} AND submissionNonce = nonce-1`,
+      `status = ${pendingItem.status} AND s3Key = ${pendingItem.s3Key} AND submissionNonce = nonce-1 AND attribute_not_exists(archivedAt)`,
     );
   });
 
@@ -1722,7 +1887,22 @@ describe('updateContentItemVideo', () => {
       title: 'Updated title',
     });
 
-    expect(contentItemPatchWhere).not.toHaveBeenCalled();
+    // Only on the item not having been archived since it was read.
+    const [whereCallback] = contentItemPatchWhere.mock.calls[0]!;
+    const eq = vi.fn((attr: string, value: string) => `${attr} = ${value}`);
+    const notExists = vi.fn((attr: string) => `attribute_not_exists(${attr})`);
+    const result = whereCallback(
+      {
+        status: 'status',
+        s3Key: 's3Key',
+        submissionNonce: 'submissionNonce',
+        archivedAt: 'archivedAt',
+      },
+      { eq, notExists },
+    );
+
+    expect(eq).not.toHaveBeenCalled();
+    expect(result).toBe('attribute_not_exists(archivedAt)');
   });
 
   it('does not attempt an S3 delete when the objectKey is unchanged', async () => {

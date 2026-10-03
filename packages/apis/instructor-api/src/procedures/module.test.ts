@@ -197,8 +197,9 @@ beforeEach(() => {
   moduleCreate.mockReturnValue({
     go: vi.fn().mockResolvedValue({ data: module }),
   });
+  // patch(key).set(values).where(notArchived).go()
   modulePatchSet.mockReturnValue({
-    go: vi.fn().mockResolvedValue({ data: module }),
+    where: () => ({ go: vi.fn().mockResolvedValue({ data: module }) }),
   });
   modulePatch.mockReturnValue({ set: modulePatchSet });
 });
@@ -355,7 +356,9 @@ describe('updateModule', () => {
   it('returns the updated module', async () => {
     const updatedModule = { ...module, title: 'Updated title' };
     modulePatchSet.mockReturnValue({
-      go: vi.fn().mockResolvedValue({ data: updatedModule }),
+      where: () => ({
+        go: vi.fn().mockResolvedValue({ data: updatedModule }),
+      }),
     });
 
     const result = await callAs().updateModule({

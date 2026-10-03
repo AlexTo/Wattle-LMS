@@ -11,6 +11,8 @@ import {
 } from './content-item-text.js';
 
 const {
+  transactionWrite,
+  transactionGo,
   moduleGet,
   courseGet,
   courseInstructorGet,
@@ -21,6 +23,8 @@ const {
   contentItemPatch,
   contentItemPatchSet,
 } = vi.hoisted(() => ({
+  transactionWrite: vi.fn(),
+  transactionGo: vi.fn(),
   moduleGet: vi.fn(),
   courseGet: vi.fn(),
   courseInstructorGet: vi.fn(),
@@ -53,6 +57,9 @@ vi.mock('@discava/core-table', () => ({
         get: contentItemGet,
         patch: contentItemPatch,
       },
+    },
+    transaction: {
+      write: transactionWrite,
     },
   })),
 }));
@@ -152,16 +159,29 @@ beforeEach(() => {
   contentItemQueryPrimary.mockReturnValue({
     go: vi.fn().mockResolvedValue({ data: [] }),
   });
-  contentItemCreate.mockReturnValue({
-    go: vi.fn().mockResolvedValue({ data: textContentItem }),
-  });
+  // Creates and edits are written in a transaction behind checks that the
+  // module and lesson are still active, so their chains end in .commit();
+  // the result is read back with get.
+  contentItemCreate.mockReturnValue({ commit: () => ({}) });
   contentItemGet.mockReturnValue({
     go: vi.fn().mockResolvedValue({ data: textContentItem }),
   });
   contentItemPatch.mockReturnValue({ set: contentItemPatchSet });
   contentItemPatchSet.mockReturnValue({
-    go: vi.fn().mockResolvedValue({ data: textContentItem }),
+    where: () => ({ commit: () => ({}) }),
   });
+  const ancestorCheck = () => ({
+    where: () => ({ commit: () => ({}) }),
+  });
+  transactionWrite.mockImplementation((fn) => {
+    fn({
+      module: { check: ancestorCheck },
+      lesson: { check: ancestorCheck },
+      contentItem: { create: contentItemCreate, patch: contentItemPatch },
+    });
+    return { go: transactionGo };
+  });
+  transactionGo.mockResolvedValue({ canceled: false, data: [] });
 });
 
 describe('createContentItemText', () => {
