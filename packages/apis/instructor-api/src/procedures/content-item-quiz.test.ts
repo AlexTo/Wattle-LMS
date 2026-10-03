@@ -411,6 +411,19 @@ describe('createContentItemQuiz', () => {
     it('rejects a prompt or explanation that is not a Tiptap document', async () => {
       await rejects({ questions: withQuestion(0, { prompt: 'plain text' }) });
       await rejects({
+        questions: withQuestion(0, {
+          prompt: JSON.stringify({ type: 'doc', content: 'oops' }),
+        }),
+      });
+      await rejects({
+        questions: withQuestion(0, {
+          prompt: JSON.stringify({
+            type: 'doc',
+            content: [{ type: 'notARealNode' }],
+          }),
+        }),
+      });
+      await rejects({
         questions: withQuestion(0, { prompt: JSON.stringify({ a: 1 }) }),
       });
       await rejects({
@@ -443,6 +456,7 @@ describe('updateContentItemQuiz', () => {
     moduleId: MODULE_ID,
     lessonId: LESSON_ID,
     contentItemId: CONTENT_ITEM_ID,
+    quizVersion: 1,
     ...quiz,
   };
 
@@ -581,6 +595,46 @@ describe('updateContentItemQuiz', () => {
     expect(
       condition({ archivedAt: 'archivedAt', quizVersion: 'quizVersion' }, op),
     ).toBe('attribute_not_exists(archivedAt) AND quizVersion = 1');
+  });
+
+  it('refuses a save based on an older version than the stored quiz, without writing', async () => {
+    contentItemGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: { ...quizContentItem, quizVersion: 2 },
+      }),
+    });
+
+    await expect(
+      callAs().updateContentItemQuiz({ ...input, quizVersion: 1 }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(transactionWrite).not.toHaveBeenCalled();
+  });
+
+  it('writes version N+1 and conditions on the client version when it matches', async () => {
+    contentItemGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: { ...quizContentItem, quizVersion: 4 },
+      }),
+    });
+
+    await callAs().updateContentItemQuiz({ ...input, quizVersion: 4 });
+
+    expect(contentItemPatchSet).toHaveBeenCalledWith(
+      expect.objectContaining({ quizVersion: 5 }),
+    );
+    const condition = contentItemPatchWhere.mock.calls[0][0] as (
+      attr: Record<string, string>,
+      op: Record<string, (...args: unknown[]) => string>,
+    ) => string;
+    expect(
+      condition(
+        { archivedAt: 'archivedAt', quizVersion: 'quizVersion' },
+        {
+          notExists: (a) => `attribute_not_exists(${a})`,
+          eq: (a, v) => `${a} = ${v}`,
+        },
+      ),
+    ).toBe('attribute_not_exists(archivedAt) AND quizVersion = 4');
   });
 
   it('reports CONFLICT when another save landed first', async () => {

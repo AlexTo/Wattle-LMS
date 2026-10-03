@@ -102,6 +102,7 @@ export const updateContentItemQuiz = courseProcedure
       moduleId,
       lessonId,
       contentItemId,
+      quizVersion,
       title,
       description,
       questions,
@@ -130,12 +131,21 @@ export const updateContentItemQuiz = courseProcedure
       lessonId,
     });
 
-    // One transaction: the module and lesson still active, the item itself
-    // not archived, and the quiz still at the version this save was based
-    // on, so `quizVersion` counts every save exactly once and two saves
-    // can't silently overwrite each other.
     const key = { courseId, moduleId, lessonId, contentItemId };
-    const baseVersion = existing.quizVersion;
+    const staleVersion = () =>
+      new TRPCError({
+        code: 'CONFLICT',
+        message:
+          'The quiz was modified by another request; reload it and retry',
+      });
+    if (existing.quizVersion !== quizVersion) {
+      throw staleVersion();
+    }
+
+    // One transaction: the module and lesson still active, the item itself
+    // not archived, and the quiz still at the version the client loaded, so
+    // a stale editor can't overwrite a newer save and `quizVersion` counts
+    // every save exactly once.
     await writeUnderActiveAncestors(
       coreTable,
       key,
@@ -148,16 +158,12 @@ export const updateContentItemQuiz = courseProcedure
             questions,
             answerKey,
             settings,
-            quizVersion: (baseVersion ?? 0) + 1,
+            quizVersion: quizVersion + 1,
             questionsHash: hashQuizQuestions(questions),
           })
           .where(
             (attr, op) =>
-              `${op.notExists(attr.archivedAt)} AND ${
-                baseVersion === undefined
-                  ? op.notExists(attr.quizVersion)
-                  : op.eq(attr.quizVersion, baseVersion)
-              }`,
+              `${op.notExists(attr.archivedAt)} AND ${op.eq(attr.quizVersion, quizVersion)}`,
           )
           .commit(),
       ],
@@ -172,11 +178,7 @@ export const updateContentItemQuiz = courseProcedure
           current,
           'Restore the content item before editing it',
         );
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message:
-            'The quiz was modified by another request; reload it and retry',
-        });
+        throw staleVersion();
       },
     );
 

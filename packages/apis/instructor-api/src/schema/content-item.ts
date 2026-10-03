@@ -207,12 +207,17 @@ export type ICreateContentItemQuizOutput = z.output<
 
 // The quiz is saved as one document: questions, answer key and settings
 // always travel together, so a save can't pair a new key with old questions.
+// `quizVersion` is the version the client loaded, which the write is
+// conditioned on, so a stale editor can't overwrite a newer save.
 export const UpdateContentItemQuizInputSchema = z
   .object({
     courseId: z.string(),
     moduleId: z.string(),
     lessonId: z.string(),
     contentItemId: z.string(),
+    // The version of the quiz the editor loaded. The save is refused with
+    // CONFLICT if the quiz has moved on since.
+    quizVersion: z.number().int().min(1),
     title: z.string().min(1).max(200).optional(),
     description: z.string().optional(),
     ...quizDefinitionShape,

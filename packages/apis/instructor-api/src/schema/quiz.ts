@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { z } from 'zod';
+import { isValidTiptapDocument } from '../lib/tiptap-document.js';
 
 export const MAX_QUIZ_QUESTIONS = 50;
 export const MIN_QUESTION_OPTIONS = 2;
@@ -12,22 +13,12 @@ export const MAX_QUESTION_OPTIONS = 10;
 // bulk of a quiz item, so their combined JSON size is bounded well under it.
 export const MAX_QUIZ_CONTENT_BYTES = 300 * 1024;
 
-// A Tiptap document, stored as a JSON string like a text item's body.
+// A Tiptap document, stored as a JSON string like a text item's body, that
+// conforms to the editor's schema.
 const TiptapJsonSchema = z
   .string()
   .max(20_000)
-  .refine((value) => {
-    try {
-      const parsed: unknown = JSON.parse(value);
-      return (
-        typeof parsed === 'object' &&
-        parsed !== null &&
-        (parsed as { type?: unknown }).type === 'doc'
-      );
-    } catch {
-      return false;
-    }
-  }, 'must be a valid Tiptap JSON document');
+  .refine(isValidTiptapDocument, 'must be a valid Tiptap JSON document');
 
 export const QuizQuestionKindSchema = z.enum(['single', 'multiple']);
 
