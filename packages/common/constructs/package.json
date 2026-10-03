@@ -7,9 +7,9 @@
     "@aws-sdk/client-api-gateway": "catalog:",
     "@aws-sdk/client-iam": "catalog:",
     "@aws-sdk/client-secrets-manager": "catalog:",
-    "@trpc/server": "catalog:",
     "@discava/core-api": "workspace:*",
     "@discava/instructor-api": "workspace:*",
+    "@trpc/server": "catalog:",
     "aws-cdk-lib": "catalog:",
     "constructs": "catalog:",
     "tslib": "^2.3.0"
