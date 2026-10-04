@@ -10,12 +10,14 @@ import {
   courseNoLongerDraft,
   draftCourseCheck,
   getCourseOrThrow,
+  hasTransactionConflict,
   initialVisibility,
   isDraftCourse,
   MAX_TRANSACTION_ITEMS,
   requireAncestorsNotArchived,
   requireCourseInstructor,
   requireNotArchived,
+  transactionConflict,
   writeUnderActiveAncestors,
 } from '../lib/course-lifecycle.js';
 import { bestEffortCancelTranscodeJobs } from '../lib/mediaconvert-client.js';
@@ -175,6 +177,10 @@ const hardDeleteLesson = async (
     const staleContentItem = results
       .slice(1)
       .some((result) => result?.code === 'ConditionalCheckFailed');
+    // Another transaction touching the same records at that moment.
+    if (!staleContentItem && hasTransactionConflict(results)) {
+      throw transactionConflict();
+    }
     throw new TRPCError({
       code: staleContentItem ? 'CONFLICT' : 'INTERNAL_SERVER_ERROR',
       message: staleContentItem

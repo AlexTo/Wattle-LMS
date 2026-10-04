@@ -1248,6 +1248,28 @@ describe('parent restored while being permanently deleted', () => {
     },
   );
 
+  // A concurrent transaction on the same records is cancelled with
+  // TransactionConflict, not a failed condition: a retryable conflict.
+  it.each([
+    ['lesson', 'deleteLesson', () => lessonKey],
+    ['module', 'deleteModule', () => moduleKey],
+  ] as const)(
+    'a %s delete reports CONFLICT, not a server error, for a transaction conflict',
+    async (_, procedure, key) => {
+      lessonQueryPrimary.mockReturnValue(resolves([lesson]));
+      contentItemQueryPrimary.mockReturnValue(resolves([textItem('item-1')]));
+      transactionGo.mockResolvedValue({
+        canceled: true,
+        data: [{ code: 'TransactionConflict' }, {}, {}, {}],
+      });
+
+      await expect(callAs()[procedure](key())).rejects.toMatchObject({
+        code: 'CONFLICT',
+        message: expect.stringContaining('Please retry'),
+      });
+    },
+  );
+
   // With content items in the transaction, the draft check is still told
   // apart from a changed item: the draft check is always the last result.
   it.each([

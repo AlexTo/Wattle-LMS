@@ -8,8 +8,10 @@ import { v7 as uuidv7 } from 'uuid';
 import { courseProcedure } from '../init.js';
 import {
   getCourseOrThrow,
+  hasTransactionConflict,
   isConditionalCheckFailed,
   requireCourseInstructor,
+  transactionConflict,
 } from '../lib/course-lifecycle.js';
 import type { ICoreTableContext } from '../middleware/core-table.js';
 import {
@@ -233,6 +235,9 @@ export const publishCourse = courseProcedure
           message:
             "The course's content changed while publishing; please retry",
         });
+      }
+      if (hasTransactionConflict(results)) {
+        throw transactionConflict();
       }
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',

@@ -618,6 +618,26 @@ describe('publishCourse', () => {
     },
   );
 
+  // DynamoDB cancels one of two transactions that touch the same records at
+  // once with TransactionConflict rather than a failed condition. Nothing was
+  // written, so it's a retryable conflict, not a server error.
+  it.each([
+    [['TransactionConflict', undefined, undefined, undefined]],
+    [[undefined, undefined, undefined, 'TransactionConflict']],
+    [['TransactionConflict', undefined, undefined, 'TransactionConflict']],
+  ])(
+    'reports CONFLICT, not a server error, for a transaction conflict %j',
+    async (codes) => {
+      canceledWith(...codes);
+
+      await expect(callAs().publishCourse(input)).rejects.toMatchObject({
+        code: 'CONFLICT',
+        message: expect.stringContaining('Please retry'),
+      });
+      expect(courseInstructorPatch).not.toHaveBeenCalled();
+    },
+  );
+
   it('reports INTERNAL_SERVER_ERROR when the transaction is canceled for another reason', async () => {
     canceledWith(undefined, undefined, undefined, undefined);
 

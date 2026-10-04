@@ -102,6 +102,21 @@ export const draftCourseCheck = (
     .where((attr, op) => op.eq(attr.status, 'draft'))
     .commit();
 
+// DynamoDB cancels one of two transactions that touch the same records at the
+// same moment with TransactionConflict, rather than a failed condition.
+// Nothing was written and a retry is safe, so it's a CONFLICT, not a server
+// error.
+export const hasTransactionConflict = (
+  results: ({ code?: string } | undefined)[] | undefined,
+) => (results ?? []).some((result) => result?.code === 'TransactionConflict');
+
+export const transactionConflict = () =>
+  new TRPCError({
+    code: 'CONFLICT',
+    message:
+      'Another request was changing the same records; nothing was changed. Please retry',
+  });
+
 export const courseNoLongerDraft = () =>
   new TRPCError({
     code: 'CONFLICT',
