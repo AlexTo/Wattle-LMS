@@ -37,6 +37,7 @@ archived_published -> published: restore
 - Repeating an action writes nothing: publishing a published course, or restoring a course that isn't archived, returns the course as it is. A retry after a timeout is safe.
 - Each change is conditioned on the status it read, so two requests can't overwrite each other: if the course changed to something else in between, the request returns `CONFLICT`.
 - Publishing also stays correct against edits made while it runs. In a draft course content can be permanently deleted, hidden or archived at any moment, so the publish transaction checks that one of the visible content items it counted, and the lesson and module it sits under, is still there and still visible. If not, nothing is published and the request returns `CONFLICT`: retrying counts again.
+- The same holds the other way round. Whether a delete is permanent or an archive depends on the course's status when the request read it, and a publish can land after that read. So a permanent delete in a draft course (of a module, lesson or content item) runs in a transaction that also checks the course is still a draft. If it was published in between, nothing is deleted and the request returns `CONFLICT`; retrying archives instead.
 - Publishing a course doesn't change any record under it. Records that are `visible` in the draft become visible to students together with the course, and hidden ones stay hidden until they're published.
 
 ### Lifecycle of a module, lesson or content item
