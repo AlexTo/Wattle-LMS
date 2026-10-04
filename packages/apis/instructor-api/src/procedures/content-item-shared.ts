@@ -14,6 +14,7 @@ import {
   isConditionalCheckFailed,
   isDraftCourse,
   MAX_TRANSACTION_ITEMS,
+  nextOrder,
   requireActiveCourse,
   requireAncestorsNotArchived,
   requireCourseInstructor,
@@ -301,13 +302,20 @@ export const restoreContentItem = courseProcedure
     requireNotArchived(module, 'Restore the module first');
     requireNotArchived(lesson, 'Restore the lesson first');
 
-    // `order` was never touched by archiving, so the item returns to its
-    // original position.
+    // A restored item goes to the end of its lesson; the instructor drags it
+    // where they want. Every page: all siblings count.
+    const { data: siblings } = await coreTable.entities.contentItem.query
+      .primary({ courseId, moduleId, lessonId })
+      .go({ pages: 'all' });
     // Conditioned on the module and lesson still being active, so one
     // archived after the checks above doesn't end up with an active item
     // under it.
     await writeUnderActiveAncestors(coreTable, key, (entities) => [
-      entities.contentItem.patch(key).remove(['archivedAt']).commit(),
+      entities.contentItem
+        .patch(key)
+        .set({ order: nextOrder(siblings) })
+        .remove(['archivedAt'])
+        .commit(),
     ]);
 
     // Transactions don't return the written attributes.

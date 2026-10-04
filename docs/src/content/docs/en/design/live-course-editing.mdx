@@ -189,7 +189,7 @@ A lesson's content items are sorted by their `order`. Reordering is an edit like
 - Repeating an order the lesson already has writes nothing.
 - The transaction holds at most 100 records and three of them are the checks, so a lesson of more than 97 content items is refused with `PRECONDITION_FAILED`, as with the other lesson-wide operations.
 - A content item added at the same moment as a reorder lands after the reordered ones, and the editor shows it once it reloads.
-- A restored item returns to the `order` it had when it was archived, which another item may have since taken, so the two can share an `order`. Their relative position is then not defined until the next reorder gives every item its own.
+- A restored item goes to the end of its lesson (see [Restoring](#restoring)), so it never shares an `order` with another item.
 
 ## Removing (archiving)
 
@@ -229,7 +229,7 @@ A video archived while it's still transcoding keeps transcoding. When the job fi
 
 The instructor course page has an **Archived** section, grouped by module and lesson, with **Restore** on every row.
 
-- Restoring clears `archivedAt` and returns the record to its original `order`.
+- Restoring clears `archivedAt` and puts the record at the **end** of its parent: its `order` becomes one past the highest among all its siblings, archived ones included, so it sorts last and never collides with another archived record restored later. The instructor drags it where they want it. Its position before it was archived isn't kept: other records may have been reordered since, so that position could already be taken.
 - A lesson can only be restored if its module isn't archived, and a content item only if neither its module nor its lesson is. Otherwise it's refused with "Restore the module first" or "Restore the lesson first", naming the module first when both are archived. The view offers to restore the parents too.
 - Nothing can be restored while the course itself is archived: it's refused with "Restore the course first".
 - A restored quiz keeps its version, attempts and best scores.

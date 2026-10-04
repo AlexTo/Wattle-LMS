@@ -353,5 +353,12 @@ export const writeInActiveCourse = async (
   });
 };
 
+// The `order` that puts a record after all of its siblings, archived ones
+// included, so it sorts last and never collides with an archived sibling
+// restored later. Used when restoring: a restored record goes to the end of
+// its parent, and the instructor drags it where they want.
+export const nextOrder = (siblings: { order: number }[]) =>
+  siblings.reduce((max, { order }) => Math.max(max, order), 0) + 1;
+
 // DynamoDB caps a single transaction at 100 items.
 export const MAX_TRANSACTION_ITEMS = 100;

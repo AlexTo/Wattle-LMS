@@ -294,6 +294,9 @@ const transactionEntity = (entity: string) => ({
         }),
       }),
       commit: () => ({ entity, op: 'patch', key, set }),
+      remove: (remove: string[]) => ({
+        commit: () => ({ entity, op: 'patch', key, set, remove }),
+      }),
     }),
     remove: (remove: string[]) => ({
       commit: () => ({ entity, op: 'patch', key, remove }),
@@ -972,6 +975,7 @@ describe('restore', () => {
         entity: 'module',
         op: 'patch',
         key: moduleKey,
+        set: { order: expect.any(Number) },
         remove: ['archivedAt'],
       },
     ]);
@@ -1005,7 +1009,13 @@ describe('restore', () => {
     expect(transactionWrites).toEqual([
       courseCheck(),
       ancestorCheck('module', moduleKey),
-      { entity: 'lesson', op: 'patch', key: lessonKey, remove: ['archivedAt'] },
+      {
+        entity: 'lesson',
+        op: 'patch',
+        key: lessonKey,
+        set: { order: expect.any(Number) },
+        remove: ['archivedAt'],
+      },
     ]);
   });
 
@@ -1050,6 +1060,7 @@ describe('restore', () => {
         entity: 'contentItem',
         op: 'patch',
         key: itemKey('item-1'),
+        set: { order: expect.any(Number) },
         remove: ['archivedAt'],
       },
     ]);
@@ -2729,4 +2740,75 @@ describe('publishing leaves content hidden on purpose alone', () => {
       }
     },
   );
+});
+
+// A restored record goes to the end of its parent: one past the highest
+// `order` among all its siblings, archived ones included, so it sorts last and
+// never collides with an archived sibling restored later.
+describe('restore puts the record at the end of its parent', () => {
+  const restoredOrder = () =>
+    (
+      transactionWrites.find(({ op, set }) => op === 'patch' && set) as {
+        set: { order: number };
+      }
+    ).set.order;
+
+  it('restoreModule: after every module in the course, archived ones included', async () => {
+    moduleGet.mockReturnValue(
+      resolves({ ...module, order: 1, archivedAt: ARCHIVED_AT }),
+    );
+    moduleQueryPrimary.mockReturnValue(
+      resolves([
+        { ...module, order: 1, archivedAt: ARCHIVED_AT },
+        { ...module, moduleId: 'm2', order: 2 },
+        { ...module, moduleId: 'm3', order: 5, archivedAt: ARCHIVED_AT },
+      ]),
+    );
+
+    await callAs().restoreModule(moduleKey);
+
+    expect(restoredOrder()).toBe(6);
+    expect(moduleQueryPrimary.mock.results[0].value.go).toHaveBeenCalledWith({
+      pages: 'all',
+    });
+  });
+
+  it('restoreLesson: after every lesson in its module', async () => {
+    lessonGet.mockReturnValue(
+      resolves({ ...lesson, order: 1, archivedAt: ARCHIVED_AT }),
+    );
+    lessonQueryPrimary.mockReturnValue(
+      resolves([
+        { ...lesson, order: 1, archivedAt: ARCHIVED_AT },
+        { ...lesson, lessonId: 'l2', order: 3 },
+      ]),
+    );
+
+    await callAs().restoreLesson(lessonKey);
+
+    expect(restoredOrder()).toBe(4);
+    expect(lessonQueryPrimary).toHaveBeenCalledWith({
+      courseId: COURSE_ID,
+      moduleId: moduleKey.moduleId,
+    });
+  });
+
+  it('restoreContentItem: after every item in its lesson, even when it had the highest order', async () => {
+    contentItemGet.mockReturnValue(
+      resolves(textItem('item-1', { order: 9, archivedAt: ARCHIVED_AT })),
+    );
+    contentItemQueryPrimary.mockReturnValue(
+      resolves([
+        textItem('item-1', { order: 9, archivedAt: ARCHIVED_AT }),
+        textItem('item-2', { order: 2 }),
+      ]),
+    );
+
+    await callAs().restoreContentItem(itemKey('item-1'));
+
+    expect(restoredOrder()).toBe(10);
+    expect(
+      contentItemQueryPrimary.mock.results[0].value.go,
+    ).toHaveBeenCalledWith({ pages: 'all' });
+  });
 });
