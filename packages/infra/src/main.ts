@@ -30,7 +30,7 @@ for (const stageName of listStageNames(PROJECT_PATH)) {
       region: config?.region ?? process.env.CDK_DEFAULT_REGION,
     },
     permissionsBoundary: stagePermissionsBoundary(app, stageName),
-    ...config?.components,
+    ...config?.infra,
   });
 }
 

@@ -205,8 +205,8 @@ export type StageConfig = {
   region?: string;
   /** AWS account ID. If omitted, CDK infers it from the active credentials. */
   account?: string;
-  /** Component-level toggles for this stage */
-  components?: StageComponents;
+  /** Infrastructure (construct) settings for this stage */
+  infra?: StageComponents;
 };
 
 /**

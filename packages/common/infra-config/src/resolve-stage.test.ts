@@ -7,7 +7,7 @@ import { listStageNames, resolveStage } from './resolve-stage.js';
 
 const PROJECT_PATH = 'packages/infra';
 const STAGE = 'discava-development';
-const ENV_KEY = 'DISCAVA_DEVELOPMENT_STUDENT_PORTAL_DOMAIN_NAMES';
+const ENV_KEY = 'DISCAVA_DEVELOPMENT_INFRA_STUDENT_PORTAL_DOMAIN_NAMES';
 
 afterEach(() => {
   delete process.env[ENV_KEY];
@@ -22,18 +22,16 @@ describe('resolveStage', () => {
 
   it('applies an env var override on top of the static stages.config.ts entry', () => {
     const withoutOverride = resolveStage(PROJECT_PATH, STAGE);
-    expect(
-      withoutOverride?.components?.studentPortal?.domainNames,
-    ).toBeUndefined();
+    expect(withoutOverride?.infra?.studentPortal?.domainNames).toBeUndefined();
 
     process.env[ENV_KEY] = 'learn.example.com';
     const withOverride = resolveStage(PROJECT_PATH, STAGE);
 
-    expect(withOverride?.components?.studentPortal?.domainNames).toEqual([
+    expect(withOverride?.infra?.studentPortal?.domainNames).toEqual([
       'learn.example.com',
     ]);
     // Unrelated static config for the stage is preserved.
-    expect(withOverride?.components?.studentPortal?.enableWaf).toBe(false);
+    expect(withOverride?.infra?.studentPortal?.enableWaf).toBe(false);
   });
 
   it('returns undefined for a stage with no configuration at all', () => {

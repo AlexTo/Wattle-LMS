@@ -82,6 +82,12 @@ const COMPONENT_FIELDS: Record<
  * segment used in override env var names, e.g. `'studentPortal'` ->
  * `'STUDENT_PORTAL'`, `'discava-development'` -> `'DISCAVA_DEVELOPMENT'`.
  */
+// Component settings live under `infra` in a stage's config, so their
+// variables carry that segment too: <STAGE>_INFRA_<COMPONENT>_<FIELD>. It
+// keeps them apart from any other kind of per-stage setting added beside
+// `infra`.
+const INFRA_SEGMENT = 'INFRA';
+
 function toEnvSegment(value: string): string {
   return value
     .replace(/[^a-zA-Z0-9]+/g, '_')
@@ -113,7 +119,7 @@ function parseEnvValue(
 }
 
 /**
- * Overrides `base` with any matching `<STAGE>_<COMPONENT>_<FIELD>` (or
+ * Overrides `base` with any matching `<STAGE>_INFRA_<COMPONENT>_<FIELD>` (or
  * `<STAGE>_REGION` / `<STAGE>_ACCOUNT`) environment variables, each segment
  * SCREAMING_SNAKE_CASE. Env overrides take priority over `base`.
  *
@@ -139,12 +145,12 @@ export function applyEnvOverrides(
   const components: Record<
     string,
     Record<string, boolean | string | string[]>
-  > = { ...base.components };
+  > = { ...base.infra };
   for (const [component, fields] of Object.entries(COMPONENT_FIELDS)) {
     const componentSegment = toEnvSegment(component);
     let overrides: Record<string, boolean | string | string[]> | undefined;
     for (const [field, kind] of Object.entries(fields)) {
-      const envKey = `${stageSegment}_${componentSegment}_${toEnvSegment(field)}`;
+      const envKey = `${stageSegment}_${INFRA_SEGMENT}_${componentSegment}_${toEnvSegment(field)}`;
       const raw = process.env[envKey];
       if (raw === undefined) continue;
       overrides ??= {};
@@ -160,7 +166,7 @@ export function applyEnvOverrides(
     ...(region ? { region } : {}),
     ...(account ? { account } : {}),
     ...(Object.keys(components).length
-      ? { components: components as StageComponents }
+      ? { infra: components as StageComponents }
       : {}),
   };
 }
