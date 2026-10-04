@@ -16,6 +16,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
 import { Alert } from '../../../../../components/alert';
 import { useInstructorApi } from '../../../../../hooks/useInstructorApi';
+import { studentActivityNote } from './student-activity';
 
 export function DeleteLessonDialog({
   courseId,
@@ -23,6 +24,7 @@ export function DeleteLessonDialog({
   lessonId,
   title,
   archive,
+  usedItems = 0,
   trigger,
 }: {
   courseId: string;
@@ -32,6 +34,8 @@ export function DeleteLessonDialog({
   // Outside a draft course, delete archives the lesson instead: students
   // stop seeing it, but it and their data for it are kept and restorable.
   archive: boolean;
+  // How many of its items students have used, for the warning on archiving.
+  usedItems?: number;
   trigger: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -66,6 +70,12 @@ export function DeleteLessonDialog({
               ? `Students will no longer see "${title}" or its content. Their progress and results are kept, and the lesson can be restored.`
               : `Are you sure you want to delete "${title}"? This can't be undone.`}
           </p>
+          {archive && studentActivityNote({ items: usedItems }) && (
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+              {studentActivityNote({ items: usedItems })}. Their progress is
+              kept, and counts again if it's restored.
+            </p>
+          )}
         </DialogHeader>
 
         {isError && (
