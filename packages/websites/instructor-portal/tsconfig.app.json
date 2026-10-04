@@ -20,6 +20,7 @@
   "exclude": [
     "out-tsc",
     "dist",
+    "src/test/**",
     "src/**/*.spec.ts",
     "src/**/*.test.ts",
     "src/**/*.spec.tsx",
