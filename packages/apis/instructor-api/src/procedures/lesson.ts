@@ -7,6 +7,8 @@ import { TRPCError } from '@trpc/server';
 import { v7 as uuidv7 } from 'uuid';
 import { courseProcedure } from '../init.js';
 import {
+  courseNoLongerDraft,
+  draftCourseCheck,
   getCourseOrThrow,
   initialVisibility,
   isDraftCourse,
@@ -95,10 +97,16 @@ const hardDeleteLesson = async (
   { courseId, moduleId, lessonId }: LessonKey,
   contentItems: Awaited<ReturnType<typeof queryLessonContentItems>>,
   checkedArchivedAt?: string,
+  // Set for a delete in a draft course: the delete lands only while the course
+  // is still a draft.
+  draftCourseId?: string,
 ) => {
   // Nothing currently limits how many content items a lesson can hold, so a
   // lesson this large can't be deleted in one transactional cascade.
-  if (contentItems.length + 1 > MAX_TRANSACTION_ITEMS) {
+  if (
+    contentItems.length + 1 + (draftCourseId === undefined ? 0 : 1) >
+    MAX_TRANSACTION_ITEMS
+  ) {
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
       message:
@@ -141,12 +149,22 @@ const hardDeleteLesson = async (
           )
           .commit(),
       ),
+      ...(draftCourseId === undefined
+        ? []
+        : [draftCourseCheck(entities, draftCourseId)]),
     ])
     .go();
 
   if (canceled) {
     // The lesson is the transaction's first item.
     const results = transactionResults ?? [];
+    // The draft check, when there is one, is its last.
+    if (
+      draftCourseId !== undefined &&
+      results.at(-1)?.code === 'ConditionalCheckFailed'
+    ) {
+      throw courseNoLongerDraft();
+    }
     if (results[0]?.code === 'ConditionalCheckFailed') {
       throw new TRPCError({
         code: 'CONFLICT',
@@ -301,6 +319,8 @@ export const deleteLesson = courseProcedure
         ctx.logger,
         key,
         await queryLessonContentItems(coreTable, key),
+        undefined,
+        courseId,
       );
       // DynamoDB transactions don't return the deleted attributes, but we
       // already fetched the lesson's pre-delete state above for the

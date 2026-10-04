@@ -88,6 +88,27 @@ export const requireAncestorsNotArchived = async (
   }
 };
 
+// Guards a permanent delete in a draft course. The draft/archive decision is
+// made from a read of the course's status, which can go stale: if the course
+// is published in between, the delete would destroy something in a course
+// students can see. Added as the last item of the delete's transaction, so it
+// lands only while the course is still a draft.
+export const draftCourseCheck = (
+  entities: TransactionEntities,
+  courseId: string,
+) =>
+  entities.course
+    .check({ courseId })
+    .where((attr, op) => op.eq(attr.status, 'draft'))
+    .commit();
+
+export const courseNoLongerDraft = () =>
+  new TRPCError({
+    code: 'CONFLICT',
+    message:
+      'The course was published while this was being deleted; nothing was deleted. Retry to archive it instead',
+  });
+
 // A DynamoDB conditional write whose condition didn't hold, as opposed to
 // any other failure.
 export const isConditionalCheckFailed = (error: unknown): boolean =>

@@ -252,6 +252,15 @@ const renderCondition = (where: (attr: any, op: any) => string): string =>
     notExists: (name: string) => `not exists(${name})`,
   });
 
+// The check that ends a draft course's permanent delete: the course must
+// still be a draft when it commits.
+const draftCourseCheck = (courseId: string) => ({
+  entity: 'course',
+  op: 'check',
+  key: { courseId },
+  condition: 'status = draft',
+});
+
 // The two checks every write under a module (and lesson) carries: the
 // ancestor still exists and isn't archived.
 const ancestorCheck = (entity: 'module' | 'lesson', key: object) => ({
@@ -359,6 +368,7 @@ beforeEach(() => {
   );
   transactionWrite.mockImplementation((build) => {
     transactionWrites = build({
+      course: transactionEntity('course'),
       module: transactionEntity('module'),
       lesson: transactionEntity('lesson'),
       contentItem: transactionEntity('contentItem'),
@@ -1203,17 +1213,40 @@ describe('parent restored while being permanently deleted', () => {
 
   // Draft courses keep their unconditional hard delete: nothing there is
   // ever archived, so there's no archive state to check.
-  it('a draft-course delete leaves the parent delete unconditional', async () => {
+  it('a draft-course delete leaves the parent delete unconditional, but only lands while the course is still a draft', async () => {
     await callAs().deleteModule(moduleKey);
     expect(transactionWrites).toEqual([
       { entity: 'module', op: 'delete', key: moduleKey },
+      draftCourseCheck(moduleKey.courseId),
     ]);
 
     await callAs().deleteLesson(lessonKey);
     expect(transactionWrites).toEqual([
       { entity: 'lesson', op: 'delete', key: lessonKey },
+      draftCourseCheck(lessonKey.courseId),
     ]);
   });
+
+  // Invariant: a delete that read the course as a draft can't destroy anything
+  // once the course has been published; it asks for a retry, which archives.
+  it.each([
+    ['module', 'deleteModule', () => moduleKey],
+    ['lesson', 'deleteLesson', () => lessonKey],
+  ] as const)(
+    'a %s delete is refused when the course was published after the status read',
+    async (_, procedure, key) => {
+      transactionGo.mockResolvedValue({
+        canceled: true,
+        data: [{}, { code: 'ConditionalCheckFailed' }],
+      });
+
+      await expect(callAs()[procedure](key())).rejects.toMatchObject({
+        code: 'CONFLICT',
+        message: expect.stringContaining('was published'),
+      });
+      expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('missing records', () => {
