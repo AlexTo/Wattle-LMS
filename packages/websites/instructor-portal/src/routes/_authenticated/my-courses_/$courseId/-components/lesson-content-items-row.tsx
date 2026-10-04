@@ -107,6 +107,11 @@ export function LessonContentItemsRow({
   const queryClient = useQueryClient();
   const reorder = useMutation(contentItem.reorder.mutationOptions());
   const [reorderError, setReorderError] = useState<string>();
+  // dnd-kit moves the rows' DOM nodes itself while an item is dragged, so
+  // when a save fails, putting the old order back in state isn't enough:
+  // React still believes the nodes are where it last put them. Bumping this
+  // key rebuilds the list from state instead.
+  const [listKey, setListKey] = useState(0);
 
   // The order shown, which moves as soon as an item is dropped and follows the
   // course view whenever that changes.
@@ -176,6 +181,7 @@ export function LessonContentItemsRow({
       {
         onError: (error) => {
           setOrder(previous);
+          setListKey((key) => key + 1);
           setReorderError(
             error.data?.code === 'CONFLICT'
               ? 'This lesson changed while you were reordering it. It has been reloaded, so try again.'
@@ -311,6 +317,7 @@ export function LessonContentItemsRow({
         ))
       ) : (
         <DragDropProvider
+          key={listKey}
           plugins={plugins}
           onDragStart={() => setReorderError(undefined)}
           onDragEnd={onDragEnd}
