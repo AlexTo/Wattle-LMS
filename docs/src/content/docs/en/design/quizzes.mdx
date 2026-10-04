@@ -20,10 +20,12 @@ Quiz-specific `contentItem` attributes. As with video and text, which attributes
 | `questions` | `[{ questionId, kind: 'single' \| 'multiple', prompt, options: [{ optionId, text }] }]`. `prompt` is Tiptap JSON. Safe to send to students |
 | `answerKey` | `{ [questionId]: { correctOptionIds: string[], explanation? } }`. `explanation` is Tiptap JSON. **Never read by core-api except when grading** |
 | `settings` | `{ passMarkPercent, attemptsAllowed /* null = unlimited */, shuffleOptions, revealAnswers: 'after_each_attempt' \| 'after_final_attempt' \| 'never' }` |
-| `quizVersion` | Number, incremented on every save |
+| `quizVersion` | Number, incremented on every save. A save names the version the editor loaded, and is refused if the quiz has moved on (see [Saving a quiz](#saving-a-quiz)) |
 | `questionsHash` | Hash of `questions` only (not `settings`), recomputed on every save |
 
-`questions` and `answerKey` are separate attributes so that passing a content item through to students can't leak the answers.
+`questions` and `answerKey` are separate attributes so that passing a content item through to students can't leak the answers. Course reads (`course.view`, `course.publicView`) list a quiz by its title and position only; they never include `questions` or `answerKey`.
+
+`questionId` and `optionId` are supplied by the client and must stay the same across saves, because the answer key, student answers and the reconcile step below all refer to them.
 
 ### `quizAttempt`
 
@@ -111,6 +113,43 @@ The quiz is a card in the lesson flow:
 - Accessibility: a `fieldset`/`legend` per question, right and wrong shown with an icon and text (not colour alone), full keyboard support.
 - Prompts and explanations use a read-only Tiptap renderer, shared from `common/shadcn`.
 
+## Saving a quiz
+
+Creating a quiz, and every later save, writes the whole quiz as one document. `quizVersion` is how two editors, or a stale tab, are kept from overwriting each other.
+
+```d2 title="What happens when an instructor saves a quiz: access and archive checks, the version check, then one conditional write"
+direction: down
+
+start: "contentItem.updateQuiz\n(sends the quizVersion\nthe editor loaded)" {shape: oval}
+access: "Instructor of this\ncourse, and the item\nis a quiz?" {shape: diamond}
+archived: "Quiz, its lesson or its\nmodule archived?" {shape: diamond}
+stale: "Stored quizVersion\n= the one sent?" {shape: diamond}
+write: "One transaction: module and lesson still\nexist and aren't archived, quiz isn't\narchived and is still at that quizVersion.\nWrites the new content, quizVersion + 1\nand the recomputed questionsHash"
+landed: "Did a condition fail?" {shape: diamond}
+
+forbidden: "FORBIDDEN or BAD_REQUEST"
+frozen: "PRECONDITION_FAILED:\nrestore it first"
+conflict: "CONFLICT: the quiz changed since it\nwas loaded; reload and retry.\nNothing written"
+done: "Saved as quizVersion + 1" {shape: oval}
+
+start -> access
+access -> forbidden: no
+access -> archived: yes
+archived -> frozen: yes
+archived -> stale: no
+stale -> conflict: no
+stale -> write: yes
+write -> landed
+landed -> conflict: "yes, and nothing is archived"
+landed -> frozen: "yes, and something was archived"
+landed -> done: no
+```
+
+- Of two saves made from the same version, exactly one lands; the other gets `CONFLICT`. The check is repeated inside the write's transaction, so it holds when the saves are simultaneous, not only when one follows the other.
+- A save that succeeds returns the new `quizVersion`, which the editor uses for its next save.
+- `questionsHash` is recomputed from `questions` only, so a save that changes just the answer key, explanations or settings keeps the same hash.
+- Creating a quiz starts it at `quizVersion` 1. Like other new content, it starts `visible` in a draft course and `hidden` otherwise, and it can't be created or edited under an archived module or lesson (see <Link path="design/live-course-editing">Live course editing</Link>).
+
 ## Instructor experience
 
 - **Add quiz** sits next to the **Video** and **Text** buttons in the lesson's content row.
@@ -120,8 +159,12 @@ The quiz is a card in the lesson flow:
   - Drag to reorder questions.
   - **Preview as student**, using the real student component.
   - The whole quiz saves as one document: `contentItem.updateQuiz` replaces questions, key and settings together.
-- Validation, in the form and in zod:
-  - At least 2 options per question.
-  - Single choice: exactly 1 correct. Multiple choice: at least 1 correct.
+- Validation, in the form and in zod (the API enforces all of it, whatever the form does):
+  - 1 to 50 questions, each with 2 to 10 options. Option text is 1 to 500 characters.
+  - Single choice: exactly 1 correct. Multiple choice: at least 1 correct. Every correct id is one of the question's options.
+  - Every question has an answer key entry, and the key has no entries for other questions. Question ids are unique, and option ids are unique within a question.
+  - Prompts and explanations are Tiptap documents that conform to the editor's schema (the same `StarterKit` nodes and marks), stored as JSON strings.
+  - Pass mark is a whole number from 0 to 100. Attempts allowed is a whole number from 1, or unlimited.
+  - Questions and answer key together are at most 300 KB, well under DynamoDB's 400 KB item limit.
   - Switching Multiple → Single with more than one correct asks which to keep.
 - Editing a quiz that has attempts warns "N students have attempted this quiz".
