@@ -7,7 +7,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { courseProcedure } from '../init.js';
 import {
   getCourseOrThrow,
-  initialVisibility,
+  initialVisibilityFields,
   requireAncestorsNotArchived,
   requireNotArchived,
   writeUnderActiveAncestors,
@@ -79,7 +79,7 @@ export const createContentItemText = courseProcedure
           description,
           body,
           order,
-          visibility: initialVisibility(course),
+          ...initialVisibilityFields(course),
         })
         .commit(),
     ]);

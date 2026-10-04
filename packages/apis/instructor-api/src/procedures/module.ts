@@ -10,9 +10,10 @@ import {
   activeCourseCheck,
   courseNoLongerDraft,
   draftCourseCheck,
+  firstPublishedAt,
   getCourseOrThrow,
   hasTransactionConflict,
-  initialVisibility,
+  initialVisibilityFields,
   isDraftCourse,
   MAX_TRANSACTION_ITEMS,
   requireActiveCourse,
@@ -264,7 +265,7 @@ export const createModule = courseProcedure
           title,
           description,
           order,
-          visibility: initialVisibility(course),
+          ...initialVisibilityFields(course),
         })
         .commit(),
     ]);
@@ -381,12 +382,18 @@ export const publishModule = courseProcedure
         .filter((lesson) => lesson.archivedAt)
         .map(({ lessonId }) => lessonId),
     );
+    // Only content that has never been published: a lesson or item hidden on
+    // purpose after it was visible stays hidden.
     const lessonsToPublish = lessons.filter(
-      (lesson) => lesson.visibility === 'hidden' && !lesson.archivedAt,
+      (lesson) =>
+        lesson.visibility === 'hidden' &&
+        !lesson.publishedAt &&
+        !lesson.archivedAt,
     );
     const contentItemsToPublish = contentItems.filter(
       (item) =>
         item.visibility === 'hidden' &&
+        !item.publishedAt &&
         !item.archivedAt &&
         !archivedLessonIds.has(item.lessonId),
     );
@@ -424,6 +431,7 @@ export const publishModule = courseProcedure
       });
     }
 
+    const publishedAt = new Date().toISOString();
     // The module goes first, conditioned on still not being archived, so an
     // archive landing after the check above can't be published past. Every
     // lesson and item is likewise conditioned on still not being archived
@@ -435,7 +443,7 @@ export const publishModule = courseProcedure
         publishModuleItself
           ? entities.module
               .patch({ courseId, moduleId })
-              .set({ visibility: 'visible' })
+              .set({ visibility: 'visible', ...firstPublishedAt(existing) })
               .where((attr, op) => op.notExists(attr.archivedAt))
               .commit()
           : entities.module
@@ -445,7 +453,7 @@ export const publishModule = courseProcedure
         ...lessonsToPublish.map(({ lessonId }) =>
           entities.lesson
             .patch({ courseId, moduleId, lessonId })
-            .set({ visibility: 'visible' })
+            .set({ visibility: 'visible', publishedAt })
             .where((attr, op) => op.notExists(attr.archivedAt))
             .commit(),
         ),
@@ -458,7 +466,7 @@ export const publishModule = courseProcedure
         ...contentItemsToPublish.map(({ lessonId, contentItemId }) =>
           entities.contentItem
             .patch({ courseId, moduleId, lessonId, contentItemId })
-            .set({ visibility: 'visible' })
+            .set({ visibility: 'visible', publishedAt })
             .where((attr, op) => op.notExists(attr.archivedAt))
             .commit(),
         ),

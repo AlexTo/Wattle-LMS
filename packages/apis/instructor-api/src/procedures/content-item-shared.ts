@@ -9,6 +9,7 @@ import { courseProcedure } from '../init.js';
 import {
   courseNoLongerDraft,
   draftCourseCheck,
+  firstPublishedAt,
   getCourseOrThrow,
   isConditionalCheckFailed,
   isDraftCourse,
@@ -71,14 +72,14 @@ interface ContentItemKey {
 export const asContentItemOutput = <T>(contentItem: unknown) =>
   contentItem as T;
 
-// Sets the item's visibility in one transaction with checks that its module
-// and lesson are still active, conditioned on the item itself still not
-// being archived, so an archive landing after the caller's own checks can't
-// be written past.
+// Sets the item's visibility (and, when publishing it for the first time,
+// its publishedAt) in one transaction with checks that its module and lesson
+// are still active, conditioned on the item itself still not being archived,
+// so an archive landing after the caller's own checks can't be written past.
 const setVisibilityUnderActiveAncestors = async (
   coreTable: CoreTable,
   key: ContentItemKey,
-  visibility: 'hidden' | 'visible',
+  change: { visibility: 'hidden' | 'visible'; publishedAt?: string },
   archivedMessage: string,
 ) => {
   await writeUnderActiveAncestors(
@@ -87,7 +88,7 @@ const setVisibilityUnderActiveAncestors = async (
     (entities) => [
       entities.contentItem
         .patch(key)
-        .set({ visibility })
+        .set(change)
         .where((attr, op) => op.notExists(attr.archivedAt))
         .commit(),
     ],
@@ -239,7 +240,7 @@ export const publishContentItem = courseProcedure
       await setVisibilityUnderActiveAncestors(
         coreTable,
         key,
-        'visible',
+        { visibility: 'visible', ...firstPublishedAt(existing) },
         'Restore the content item before publishing it',
       ),
     );
@@ -265,7 +266,7 @@ export const hideContentItem = courseProcedure
       await setVisibilityUnderActiveAncestors(
         coreTable,
         key,
-        'hidden',
+        { visibility: 'hidden' },
         'Restore the content item before hiding it',
       ),
     );

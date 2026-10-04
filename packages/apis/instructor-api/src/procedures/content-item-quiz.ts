@@ -7,7 +7,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { courseProcedure } from '../init.js';
 import {
   getCourseOrThrow,
-  initialVisibility,
+  initialVisibilityFields,
   requireAncestorsNotArchived,
   requireCourseInstructor,
   requireNotArchived,
@@ -80,7 +80,7 @@ export const createContentItemQuiz = courseProcedure
           quizVersion: 1,
           questionsHash: hashQuizQuestions(questions),
           order,
-          visibility: initialVisibility(course),
+          ...initialVisibilityFields(course),
         })
         .commit(),
     ]);
