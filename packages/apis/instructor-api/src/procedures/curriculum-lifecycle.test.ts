@@ -764,21 +764,21 @@ describe('publishModule', () => {
         entity: 'module',
         op: 'patch',
         key: moduleKey,
-        set: { visibility: 'visible' },
+        set: { visibility: 'visible', publishedAt: expect.any(String) },
         condition: NOT_ARCHIVED,
       },
       {
         entity: 'lesson',
         op: 'patch',
         key: lessonKey,
-        set: { visibility: 'visible' },
+        set: { visibility: 'visible', publishedAt: expect.any(String) },
         condition: NOT_ARCHIVED,
       },
       {
         entity: 'contentItem',
         op: 'patch',
         key: itemKey('item-hidden'),
-        set: { visibility: 'visible' },
+        set: { visibility: 'visible', publishedAt: expect.any(String) },
         condition: NOT_ARCHIVED,
       },
       courseCheck(),
@@ -839,14 +839,14 @@ describe('publishLesson', () => {
         entity: 'lesson',
         op: 'patch',
         key: lessonKey,
-        set: { visibility: 'visible' },
+        set: { visibility: 'visible', publishedAt: expect.any(String) },
         condition: NOT_ARCHIVED,
       },
       {
         entity: 'contentItem',
         op: 'patch',
         key: itemKey('item-hidden'),
-        set: { visibility: 'visible' },
+        set: { visibility: 'visible', publishedAt: expect.any(String) },
         condition: NOT_ARCHIVED,
       },
     ]);
@@ -882,7 +882,7 @@ describe('publishContentItem and hide*', () => {
         entity: 'contentItem',
         op: 'patch',
         key: itemKey('item-1'),
-        set: { visibility: 'visible' },
+        set: { visibility: 'visible', publishedAt: expect.any(String) },
         condition: NOT_ARCHIVED,
       },
     ]);
@@ -1258,7 +1258,7 @@ describe('descendants spanning more than one query page', () => {
         entity: 'contentItem',
         op: 'patch',
         key: itemKey('item-on-page-2'),
-        set: { visibility: 'visible' },
+        set: { visibility: 'visible', publishedAt: expect.any(String) },
         condition: NOT_ARCHIVED,
       },
       courseCheck(),
@@ -1288,7 +1288,7 @@ describe('descendants spanning more than one query page', () => {
         entity: 'contentItem',
         op: 'patch',
         key: itemKey('item-on-page-2'),
-        set: { visibility: 'visible' },
+        set: { visibility: 'visible', publishedAt: expect.any(String) },
         condition: NOT_ARCHIVED,
       },
     ]);
@@ -1978,7 +1978,7 @@ describe('lessons spanning more than one query page', () => {
         entity: 'lesson',
         op: 'patch',
         key: { ...moduleKey, lessonId: 'lesson-page-2' },
-        set: { visibility: 'visible' },
+        set: { visibility: 'visible', publishedAt: expect.any(String) },
         condition: NOT_ARCHIVED,
       },
       courseCheck(),
@@ -2428,14 +2428,14 @@ describe('a descendant archived while a publish is in flight', () => {
         entity: 'module',
         op: 'patch',
         key: moduleKey,
-        set: { visibility: 'visible' },
+        set: { visibility: 'visible', publishedAt: expect.any(String) },
         condition: NOT_ARCHIVED,
       },
       {
         entity: 'lesson',
         op: 'patch',
         key: { ...moduleKey, lessonId: 'lesson-hidden' },
-        set: { visibility: 'visible' },
+        set: { visibility: 'visible', publishedAt: expect.any(String) },
         condition: NOT_ARCHIVED,
       },
       // The visible lesson isn't published, but its item is: checked.
@@ -2453,14 +2453,14 @@ describe('a descendant archived while a publish is in flight', () => {
           lessonId: 'lesson-hidden',
           contentItemId: 'item-in-hidden-lesson',
         },
-        set: { visibility: 'visible' },
+        set: { visibility: 'visible', publishedAt: expect.any(String) },
         condition: NOT_ARCHIVED,
       },
       {
         entity: 'contentItem',
         op: 'patch',
         key: itemKey('item-in-visible-lesson'),
-        set: { visibility: 'visible' },
+        set: { visibility: 'visible', publishedAt: expect.any(String) },
         condition: NOT_ARCHIVED,
       },
       courseCheck(),
@@ -2560,4 +2560,173 @@ describe('course archived between the checks and the write', () => {
     });
     expect(transactionWrites.at(-1)).toEqual(courseCheck());
   });
+});
+
+// Invariant: publishing a module or lesson publishes only hidden descendants
+// that have never been published -- content that's new. One hidden on purpose
+// after it was visible (it has a publishedAt) stays hidden.
+describe('publishing leaves content hidden on purpose alone', () => {
+  const PUBLISHED_AT = '2024-01-15T00:00:00.000Z';
+
+  it('publishModule publishes a new lesson and item, but not ones hidden after they were visible', async () => {
+    moduleGet
+      .mockReturnValueOnce(resolves({ ...module, publishedAt: PUBLISHED_AT }))
+      .mockReturnValueOnce(resolves(module));
+    lessonQueryPrimary.mockReturnValue(
+      resolves([
+        { ...lesson, lessonId: 'lesson-new', visibility: 'hidden' },
+        {
+          ...lesson,
+          lessonId: 'lesson-hidden-on-purpose',
+          visibility: 'hidden',
+          publishedAt: PUBLISHED_AT,
+        },
+        lesson,
+      ]),
+    );
+    contentItemQueryPrimary.mockReturnValue(
+      resolves([
+        textItem('item-new', { visibility: 'hidden' }),
+        textItem('item-hidden-on-purpose', {
+          visibility: 'hidden',
+          publishedAt: PUBLISHED_AT,
+        }),
+      ]),
+    );
+
+    await callAs().publishModule(moduleKey);
+
+    const written = transactionWrites
+      .filter(({ op }) => op === 'patch')
+      .map(({ entity, key }) =>
+        entity === 'lesson'
+          ? `lesson ${(key as { lessonId: string }).lessonId}`
+          : `${entity} ${(key as { contentItemId?: string }).contentItemId ?? ''}`.trim(),
+      );
+    expect(written).toEqual(['lesson lesson-new', 'contentItem item-new']);
+  });
+
+  it('publishModule writes nothing when the only hidden content was hidden on purpose', async () => {
+    moduleGet.mockReturnValue(
+      resolves({ ...module, publishedAt: PUBLISHED_AT }),
+    );
+    lessonQueryPrimary.mockReturnValue(
+      resolves([
+        { ...lesson, visibility: 'hidden', publishedAt: PUBLISHED_AT },
+      ]),
+    );
+    contentItemQueryPrimary.mockReturnValue(
+      resolves([
+        textItem('item-1', { visibility: 'hidden', publishedAt: PUBLISHED_AT }),
+      ]),
+    );
+
+    await callAs().publishModule(moduleKey);
+
+    expect(transactionWrite).not.toHaveBeenCalled();
+  });
+
+  it('publishLesson publishes a new item, but not one hidden after it was visible', async () => {
+    lessonGet
+      .mockReturnValueOnce(resolves({ ...lesson, publishedAt: PUBLISHED_AT }))
+      .mockReturnValueOnce(resolves(lesson));
+    contentItemQueryPrimary.mockReturnValue(
+      resolves([
+        textItem('item-new', { visibility: 'hidden' }),
+        textItem('item-hidden-on-purpose', {
+          visibility: 'hidden',
+          publishedAt: PUBLISHED_AT,
+        }),
+      ]),
+    );
+
+    await callAs().publishLesson(lessonKey);
+
+    expect(
+      transactionWrites
+        .filter(({ entity, op }) => entity === 'contentItem' && op === 'patch')
+        .map(({ key }) => (key as { contentItemId: string }).contentItemId),
+    ).toEqual(['item-new']);
+  });
+
+  // The record you publish yourself is always published, whatever its history.
+  it('publishContentItem publishes an item hidden on purpose, keeping its first publishedAt', async () => {
+    contentItemGet.mockReturnValueOnce(
+      resolves(
+        textItem('item-1', { visibility: 'hidden', publishedAt: PUBLISHED_AT }),
+      ),
+    );
+
+    await callAs().publishContentItem(itemKey('item-1'));
+
+    expect(transactionWrites.at(-1)).toMatchObject({
+      entity: 'contentItem',
+      set: { visibility: 'visible' },
+    });
+    expect(
+      (transactionWrites.at(-1) as { set: Record<string, unknown> }).set,
+    ).not.toHaveProperty('publishedAt');
+  });
+
+  it('publishModule publishes the module itself when hidden on purpose, keeping its first publishedAt', async () => {
+    moduleGet
+      .mockReturnValueOnce(
+        resolves({
+          ...module,
+          visibility: 'hidden',
+          publishedAt: PUBLISHED_AT,
+        }),
+      )
+      .mockReturnValueOnce(resolves(module));
+
+    await callAs().publishModule(moduleKey);
+
+    expect(transactionWrites[0]).toMatchObject({
+      entity: 'module',
+      op: 'patch',
+      set: { visibility: 'visible' },
+    });
+    expect(
+      (transactionWrites[0] as { set: Record<string, unknown> }).set,
+    ).not.toHaveProperty('publishedAt');
+  });
+
+  it('hiding never touches publishedAt', async () => {
+    contentItemGet.mockReturnValueOnce(
+      resolves(textItem('item-1', { publishedAt: PUBLISHED_AT })),
+    );
+
+    await callAs().hideContentItem(itemKey('item-1'));
+
+    expect(
+      (transactionWrites.at(-1) as { set: Record<string, unknown> }).set,
+    ).toEqual({ visibility: 'hidden' });
+  });
+
+  // A record created in a draft course is visible from the start, so it counts
+  // as published then; in a published course it starts hidden and unpublished.
+  it.each([
+    ['draft', true],
+    ['published', false],
+  ] as const)(
+    'records created in a %s course get publishedAt: %s',
+    async (status, hasPublishedAt) => {
+      setCourseStatus(status);
+
+      await callAs().createModule({ courseId: COURSE_ID, title: 'New module' });
+      await callAs().createLesson({ ...moduleKey, title: 'New lesson' });
+      await callAs().createContentItemText({
+        ...lessonKey,
+        title: 'New text',
+        body: '{}',
+      });
+
+      for (const entity of ['module', 'lesson', 'contentItem']) {
+        const values = createdRecords.findLast(
+          (record) => record.entity === entity,
+        )?.values;
+        expect(Boolean(values?.publishedAt)).toBe(hasPublishedAt);
+      }
+    },
+  );
 });

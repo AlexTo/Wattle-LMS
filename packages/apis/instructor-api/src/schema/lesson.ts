@@ -14,6 +14,7 @@ export const LessonSchema = z.object({
   order: z.number(),
   visibility: CurriculumVisibilitySchema,
   archivedAt: z.string().optional(),
+  publishedAt: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

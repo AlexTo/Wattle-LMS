@@ -9,9 +9,10 @@ import { courseProcedure } from '../init.js';
 import {
   courseNoLongerDraft,
   draftCourseCheck,
+  firstPublishedAt,
   getCourseOrThrow,
   hasTransactionConflict,
-  initialVisibility,
+  initialVisibilityFields,
   isDraftCourse,
   MAX_TRANSACTION_ITEMS,
   requireActiveCourse,
@@ -251,7 +252,7 @@ export const createLesson = courseProcedure
             title,
             description,
             order,
-            visibility: initialVisibility(course),
+            ...initialVisibilityFields(course),
           })
           .commit(),
       ],
@@ -380,7 +381,12 @@ export const publishLesson = courseProcedure
 
     const contentItemsToPublish = (
       await queryLessonContentItems(coreTable, key)
-    ).filter((item) => item.visibility === 'hidden' && !item.archivedAt);
+    ).filter(
+      // Only content that has never been published: an item hidden on purpose
+      // after it was visible stays hidden.
+      (item) =>
+        item.visibility === 'hidden' && !item.publishedAt && !item.archivedAt,
+    );
     const publishLessonItself = existing.visibility === 'hidden';
 
     if (!publishLessonItself && contentItemsToPublish.length === 0) {
@@ -396,6 +402,7 @@ export const publishLesson = courseProcedure
       });
     }
 
+    const publishedAt = new Date().toISOString();
     // Conditioned on the module still being active and the lesson still not
     // archived, so an archive landing after the checks above can't be
     // published past. Any other cancellation -- a content item archived or
@@ -408,7 +415,7 @@ export const publishLesson = courseProcedure
         publishLessonItself
           ? entities.lesson
               .patch(key)
-              .set({ visibility: 'visible' })
+              .set({ visibility: 'visible', ...firstPublishedAt(existing) })
               .where((attr, op) => op.notExists(attr.archivedAt))
               .commit()
           : entities.lesson
@@ -421,7 +428,7 @@ export const publishLesson = courseProcedure
         ...contentItemsToPublish.map(({ contentItemId }) =>
           entities.contentItem
             .patch({ ...key, contentItemId })
-            .set({ visibility: 'visible' })
+            .set({ visibility: 'visible', publishedAt })
             .where((attr, op) => op.notExists(attr.archivedAt))
             .commit(),
         ),

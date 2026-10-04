@@ -15,7 +15,7 @@ import {
 } from '../lib/cloudfront-client.js';
 import {
   getCourseOrThrow,
-  initialVisibility,
+  initialVisibilityFields,
   requireAncestorsNotArchived,
   requireNotArchived,
   writeUnderActiveAncestors,
@@ -255,7 +255,7 @@ export const createContentItemVideo = courseProcedure
           mimeType,
           durationSeconds,
           order,
-          visibility: initialVisibility(course),
+          ...initialVisibilityFields(course),
           submissionNonce,
         })
         .commit(),
