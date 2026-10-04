@@ -4,26 +4,18 @@
  */
 import { Button } from '@discava/common-shadcn/components/ui/button';
 import { cn } from '@discava/common-shadcn/lib/utils';
+import { Accessibility, defaultPreset } from '@dnd-kit/dom';
+import { move } from '@dnd-kit/helpers';
 import {
-  closestCenter,
-  DndContext,
+  DragDropProvider,
   type DragEndEvent,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+  type DragOverEvent,
+  type DragStartEvent,
+} from '@dnd-kit/react';
+import { isSortable, useSortable } from '@dnd-kit/react/sortable';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { FileText, GripVertical, PencilLine, Video } from 'lucide-react';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from '../../../../../components/alert';
 import { useInstructorApi } from '../../../../../hooks/useInstructorApi';
 import {
@@ -51,33 +43,26 @@ const ROW_CLASS =
   'group/resource flex items-center gap-2 border-l px-3 py-2 transition-colors hover:bg-muted/50';
 
 // One draggable row. The grip is the handle, so the row's own buttons keep
-// working; it can also be picked up with the keyboard (Space, then the arrow
-// keys, then Space to drop).
+// working; it can also be picked up with the keyboard (Space or Enter, then the
+// arrow keys, then Space or Enter to drop, Escape to cancel).
 function SortableContentItem({
   id,
+  index,
   title,
   disabled,
   children,
 }: {
   id: string;
+  index: number;
   title: string;
   disabled: boolean;
   children: (handle: ReactNode) => ReactNode;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    setActivatorNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id, disabled });
+  const { ref, handleRef, isDragging } = useSortable({ id, index, disabled });
 
   return (
     <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      ref={ref}
       className={cn(
         ROW_CLASS,
         isDragging && 'relative z-10 bg-background shadow-md',
@@ -85,12 +70,11 @@ function SortableContentItem({
     >
       {children(
         <button
-          ref={setActivatorNodeRef}
+          ref={handleRef}
           type="button"
           aria-label={`Reorder ${title}`}
+          disabled={disabled}
           className="-ml-1 flex size-6 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring active:cursor-grabbing disabled:cursor-not-allowed"
-          {...attributes}
-          {...listeners}
         >
           <GripVertical className="size-3.5" />
         </button>,
@@ -136,43 +120,39 @@ export function LessonContentItemsRow({
   );
   const items = order.flatMap((id) => byId.get(id) ?? []);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  );
-
-  const titleOf = (id: string | number) =>
-    byId.get(String(id))?.title ?? 'item';
-  const positionOf = (id: string | number) => order.indexOf(String(id)) + 1;
-  // What a screen reader hears, using titles rather than ids.
-  const announcements = {
-    onDragStart: ({ active }: { active: { id: string | number } }) =>
-      `Picked up ${titleOf(active.id)}, position ${positionOf(active.id)} of ${order.length}.`,
-    onDragOver: ({
-      active,
-      over,
-    }: {
-      active: { id: string | number };
-      over: { id: string | number } | null;
-    }) =>
-      over
-        ? `${titleOf(active.id)} is over position ${positionOf(over.id)} of ${order.length}.`
-        : `${titleOf(active.id)} is no longer over a position.`,
-    onDragEnd: ({
-      active,
-      over,
-    }: {
-      active: { id: string | number };
-      over: { id: string | number } | null;
-    }) =>
-      over
-        ? `${titleOf(active.id)} dropped at position ${positionOf(over.id)} of ${order.length}.`
-        : `${titleOf(active.id)} dropped back in place.`,
-    onDragCancel: ({ active }: { active: { id: string | number } }) =>
-      `Moving ${titleOf(active.id)} was cancelled.`,
-  };
+  // The announcements read the latest titles and order through a ref, so the
+  // plugin list below can stay the same object across renders: the provider
+  // reconfigures its plugins whenever that list changes, which would rebuild
+  // the screen reader plugin mid-drag.
+  const latest = useRef({ order, byId });
+  latest.current = { order, byId };
+  const plugins = useMemo(() => {
+    type Source = DragStartEvent['operation']['source'];
+    const titleOf = (source: Source) =>
+      latest.current.byId.get(String(source?.id))?.title ?? 'item';
+    const count = () => latest.current.order.length;
+    // Where the dragged item sits (1-based), now or when the drag started.
+    const positionOf = (source: Source, initial = false) =>
+      isSortable(source)
+        ? (initial ? source.initialIndex : source.index) + 1
+        : undefined;
+    // What a screen reader hears, using titles rather than ids.
+    return [
+      ...defaultPreset.plugins.filter((plugin) => plugin !== Accessibility),
+      Accessibility.configure({
+        announcements: {
+          dragstart: ({ operation: { source } }: DragStartEvent) =>
+            `Picked up ${titleOf(source)}, position ${positionOf(source)} of ${count()}.`,
+          dragover: ({ operation: { source } }: DragOverEvent) =>
+            `${titleOf(source)} moved to position ${positionOf(source)} of ${count()}.`,
+          dragend: ({ operation: { source }, canceled }: DragEndEvent) =>
+            canceled
+              ? `Moving ${titleOf(source)} was cancelled. It is back at position ${positionOf(source, true)} of ${count()}.`
+              : `${titleOf(source)} dropped at position ${positionOf(source)} of ${count()}.`,
+        },
+      }),
+    ];
+  }, []);
 
   const refreshCourse = () =>
     queryClient.invalidateQueries({
@@ -181,16 +161,15 @@ export function LessonContentItemsRow({
 
   // Saves the whole new order in one call. On failure the order snaps back and
   // the course reloads; a CONFLICT means the lesson changed under the editor.
-  const onDragEnd = ({ active, over }: DragEndEvent) => {
-    if (!over || active.id === over.id) {
+  const onDragEnd = (event: DragEndEvent) => {
+    if (event.canceled) {
       return;
     }
     const previous = order;
-    const next = arrayMove(
-      order,
-      order.indexOf(String(active.id)),
-      order.indexOf(String(over.id)),
-    );
+    const next = move(order, event);
+    if (next.join(',') === previous.join(',')) {
+      return;
+    }
     setOrder(next);
     reorder.mutate(
       { courseId, moduleId, lessonId, contentItemIds: next },
@@ -331,26 +310,23 @@ export function LessonContentItemsRow({
           </div>
         ))
       ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
+        <DragDropProvider
+          plugins={plugins}
           onDragStart={() => setReorderError(undefined)}
           onDragEnd={onDragEnd}
-          accessibility={{ announcements }}
         >
-          <SortableContext items={order} strategy={verticalListSortingStrategy}>
-            {items.map((item) => (
-              <SortableContentItem
-                key={item.contentItemId}
-                id={item.contentItemId}
-                title={item.title}
-                disabled={reorder.isPending}
-              >
-                {(handle) => renderItem(item, handle)}
-              </SortableContentItem>
-            ))}
-          </SortableContext>
-        </DndContext>
+          {items.map((item, index) => (
+            <SortableContentItem
+              key={item.contentItemId}
+              id={item.contentItemId}
+              index={index}
+              title={item.title}
+              disabled={reorder.isPending}
+            >
+              {(handle) => renderItem(item, handle)}
+            </SortableContentItem>
+          ))}
+        </DragDropProvider>
       )}
       {reorderError && (
         <div className="border-l px-3 pt-2">
