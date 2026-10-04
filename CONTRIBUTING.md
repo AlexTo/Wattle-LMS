@@ -41,6 +41,33 @@ Prefer the [Nx Plugin for AWS](https://awslabs.github.io/nx-plugin-for-aws) gene
 
 [Biome](https://biomejs.dev) formats and lints this codebase (single quotes, trailing commas, 80-column width); `pnpm lint` runs it with `--configuration=fix`. Every source file, except generated output, translated docs, and `.astro` files, carries an Apache-2.0 SPDX header, written by the `license#sync` Nx sync generator (configured in [aws-nx-plugin.config.mts](aws-nx-plugin.config.mts)). Please don't hand-edit headers; `pnpm lint` and `pnpm build` keep them in sync for you.
 
+### Testing Portal Components
+
+The instructor portal's components are tested with [Vitest](https://vitest.dev) and [Testing Library](https://testing-library.com/docs/react-testing-library/intro), in jsdom. Put a test next to the component as `<name>.test.tsx`.
+
+Render it with `renderWithInstructorApi` from `src/test/render-with-instructor-api.tsx`. It wraps the component in a fresh React Query client and the real tRPC client, answered by handlers you give per procedure instead of the network:
+
+```tsx
+const { calls, user } = renderWithInstructorApi(<MyComponent courseId="course-1" />, {
+  handlers: {
+    'course.publish': () => ({ courseId: 'course-1', status: 'published' }),
+    'course.restore': () => {
+      throw new ApiError('PRECONDITION_FAILED', 'Restore the course first');
+    },
+  },
+});
+
+await user.click(screen.getByRole('button', { name: 'Publish' }));
+await waitFor(() =>
+  expect(calls).toEqual([{ path: 'course.publish', input: { courseId: 'course-1' } }]),
+);
+```
+
+- `calls` lists every procedure the component called, with its input. A procedure without a handler fails with `NOT_FOUND`.
+- Throw `ApiError(code, message)` from a handler to make the call fail the way the API does (`error.data.code` is set).
+- Find elements by role and accessible name, as a user or screen reader would, rather than by class or test id.
+- jsdom has no layout, so drag and drop can't be driven by the pointer or keyboard in these tests. Simulate the drop event instead (see `lesson-content-items-row.test.tsx`), and check real dragging in a browser.
+
 ### Writing Documentation
 
 Docs live in `docs/` (Astro + Starlight, deployed to GitHub Pages). Please only author English content, under `docs/src/content/docs/en/`; other locales are generated from it, not hand-written.
