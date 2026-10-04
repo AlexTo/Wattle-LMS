@@ -1,7 +1,14 @@
 {
   "migrations": [
     {
-      "version": "1.0.4",
+      "version": "1.0.5",
+      "description": "Publish a configured custom domain as the API URL in runtime config for vended REST/HTTP API constructs and Terraform modules, and add custom domain inputs to the Terraform API modules",
+      "implementation": "./src/migrations/latest/api-custom-domain-runtime-config/migration",
+      "package": "@aws/nx-plugin",
+      "name": "latest-api-custom-domain-runtime-config"
+    },
+    {
+      "version": "1.0.5",
       "description": "Sync vended dependency versions and the tracked plugin version to those vended by this release",
       "implementation": "./src/utils/version-upgrade-migration/migration",
       "package": "@aws/nx-plugin",
