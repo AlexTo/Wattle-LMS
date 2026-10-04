@@ -47,7 +47,7 @@ const describe = ({
           item: 'as long as its lesson and module are visible',
         }[level];
     return hasChildren
-      ? `Students will see "${title}" ${when}, together with everything hidden in it, including anything hidden on purpose. Hide those again afterwards if they should stay hidden.`
+      ? `Students will see "${title}" ${when}, together with the new content in it that hasn't been published yet. Anything you hid after students could see it stays hidden.`
       : `Students will see "${title}" ${when}.`;
   }
   return draft
