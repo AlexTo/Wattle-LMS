@@ -189,6 +189,9 @@ const ancestorChecks = (
 //   error ("Restore the module first", NOT_FOUND), else CONFLICT;
 // - one of `writes` failed its own condition: `onWriteConflict` throws the
 //   caller's error (CONFLICT by default);
+// - another transaction was touching the same records at that moment
+//   (TransactionConflict): CONFLICT, since nothing was written and a retry
+//   is safe;
 // - anything else: INTERNAL_SERVER_ERROR.
 export const writeUnderActiveAncestors = async (
   coreTable: CoreTable,
@@ -222,6 +225,9 @@ export const writeUnderActiveAncestors = async (
   if (failedAt(ancestorCount)) {
     await onWriteConflict();
     throw conflict();
+  }
+  if (hasTransactionConflict(results)) {
+    throw transactionConflict();
   }
   throw new TRPCError({
     code: 'INTERNAL_SERVER_ERROR',
