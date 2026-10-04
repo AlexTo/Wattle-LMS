@@ -322,3 +322,25 @@ export const DeleteContentItemPermanentlyOutputSchema = ContentItemSchema;
 export type IDeleteContentItemPermanentlyOutput = z.output<
   typeof DeleteContentItemPermanentlyOutputSchema
 >;
+
+// The ids of every content item in the lesson that isn't archived, in the order
+// they should appear. The whole list travels together, so one drag in the
+// editor is one atomic write and a client that doesn't know about an item that
+// was added or archived in the meantime is told so, not left to guess.
+export const ReorderContentItemsInputSchema = z.object({
+  courseId: z.string(),
+  moduleId: z.string(),
+  lessonId: z.string(),
+  contentItemIds: z.array(z.string()).min(1),
+});
+
+export type IReorderContentItemsInput = z.output<
+  typeof ReorderContentItemsInputSchema
+>;
+
+// The lesson's content items that aren't archived, in their new order.
+export const ReorderContentItemsOutputSchema = z.array(ContentItemSchema);
+
+export type IReorderContentItemsOutput = z.output<
+  typeof ReorderContentItemsOutputSchema
+>;

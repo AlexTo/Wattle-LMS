@@ -174,6 +174,20 @@ That includes descendants that were hidden on purpose: publishing a module or le
 
 Hiding is not cascaded: it changes only the record itself, and its children keep their own `visibility`. Students stop seeing the children anyway, since a record is only shown under visible ancestors.
 
+## Reordering content items
+
+A lesson's content items are sorted by their `order`. Reordering is an edit like any other, so it follows the archive rules: it's refused in an archived course, module or lesson ("Restore the course (module, lesson) first"). It applies to every content item type alike, a quiz as much as a video or text item.
+
+`contentItem.reorder` takes the ids of **every content item in the lesson that isn't archived**, in the order they should appear, and writes every `order` (1, 2, 3, ...) in one transaction, so a single drag is one atomic change.
+
+- The list has to match the lesson exactly. If it misses an item, includes one that was archived or removed, or includes an unknown id, the request returns `CONFLICT` and writes nothing: the editor was working from an out-of-date list, so it reloads and tries again. An id that appears twice is a `BAD_REQUEST`.
+- Each item is conditioned on still not being archived, in the same transaction as the checks on the course, module and lesson, so an item archived while the request runs cancels the whole reorder.
+- Archived items aren't part of the list. They keep the `order` they had.
+- Repeating an order the lesson already has writes nothing.
+- The transaction holds at most 100 records and three of them are the checks, so a lesson of more than 97 content items is refused with `PRECONDITION_FAILED`, as with the other lesson-wide operations.
+- A content item added at the same moment as a reorder lands after the reordered ones, and the editor shows it once it reloads.
+- A restored item returns to the `order` it had when it was archived, which another item may have since taken, so the two can share an `order`. Their relative position is then not defined until the next reorder gives every item its own.
+
 ## Removing (archiving)
 
 Outside a draft course, delete always archives, and the instructor portal labels the action **Archive** (in a draft course it's **Delete** for modules and lessons, and **Remove** for content items). The confirmation dialog shows the impact from `studentActivityCount`:

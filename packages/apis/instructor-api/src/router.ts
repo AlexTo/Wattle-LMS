@@ -13,6 +13,7 @@ import {
   deleteContentItemPermanently,
   hideContentItem,
   publishContentItem,
+  reorderContentItems,
   restoreContentItem,
 } from './procedures/content-item-shared.js';
 import {
@@ -91,6 +92,7 @@ export const appRouter = router({
     delete: deleteContentItem,
     publish: publishContentItem,
     hide: hideContentItem,
+    reorder: reorderContentItems,
     restore: restoreContentItem,
     deletePermanently: deleteContentItemPermanently,
   }),

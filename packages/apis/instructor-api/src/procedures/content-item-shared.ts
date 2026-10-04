@@ -12,6 +12,7 @@ import {
   getCourseOrThrow,
   isConditionalCheckFailed,
   isDraftCourse,
+  MAX_TRANSACTION_ITEMS,
   requireActiveCourse,
   requireAncestorsNotArchived,
   requireCourseInstructor,
@@ -40,9 +41,12 @@ import {
   type IDeleteContentItemPermanentlyOutput,
   type IHideContentItemOutput,
   type IPublishContentItemOutput,
+  type IReorderContentItemsOutput,
   type IRestoreContentItemOutput,
   PublishContentItemInputSchema,
   PublishContentItemOutputSchema,
+  ReorderContentItemsInputSchema,
+  ReorderContentItemsOutputSchema,
   RestoreContentItemInputSchema,
   RestoreContentItemOutputSchema,
 } from '../schema/index.js';
@@ -368,5 +372,96 @@ export const deleteContentItemPermanently = courseProcedure
     await cleanUpDeletedContentItem(ctx.logger, contentItem);
     return asContentItemOutput<IDeleteContentItemPermanentlyOutput>(
       contentItem,
+    );
+  });
+
+const lessonContentItemsChanged = () =>
+  new TRPCError({
+    code: 'CONFLICT',
+    message:
+      "The lesson's content items changed while you were reordering them; reload and try again",
+  });
+
+// Puts the lesson's content items in the given order, writing every `order` in
+// one transaction behind the checks on the course, module and lesson, so it
+// follows the same archive rules as any other edit: nothing is reordered in an
+// archived course, module or lesson. Works the same for every content item
+// type. Archived items keep the `order` they had and aren't part of the list.
+//
+// The list has to be exactly the lesson's items that aren't archived, so a
+// client that missed an item added, archived or removed in the meantime gets
+// `CONFLICT` and reloads rather than overwriting what it never saw. Repeating
+// an order the lesson already has writes nothing.
+export const reorderContentItems = courseProcedure
+  .input(ReorderContentItemsInputSchema)
+  .output(ReorderContentItemsOutputSchema)
+  .mutation(async ({ ctx, input }) => {
+    const coreTable = ctx.coreTable!;
+    const { courseId, moduleId, lessonId, contentItemIds } = input;
+
+    await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
+    await requireAncestorsNotArchived(coreTable, {
+      courseId,
+      moduleId,
+      lessonId,
+    });
+
+    if (new Set(contentItemIds).size !== contentItemIds.length) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'A content item can only appear once in the new order',
+      });
+    }
+
+    // Every page: a lesson's items can exceed a single 1 MB query page.
+    const readItems = async () => {
+      const { data } = await coreTable.entities.contentItem.query
+        .primary({ courseId, moduleId, lessonId })
+        .go({ pages: 'all' });
+      return data.filter((item) => !item.archivedAt);
+    };
+    const items = await readItems();
+    const byId = new Map(items.map((item) => [item.contentItemId, item]));
+    if (
+      byId.size !== contentItemIds.length ||
+      contentItemIds.some((id) => !byId.has(id))
+    ) {
+      throw lessonContentItemsChanged();
+    }
+
+    // The transaction also carries the checks on the course, module and lesson.
+    if (3 + contentItemIds.length > MAX_TRANSACTION_ITEMS) {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: `This lesson has too many content items to reorder in one operation (the limit is ${MAX_TRANSACTION_ITEMS - 3}).`,
+      });
+    }
+
+    const unchanged = contentItemIds.every(
+      (id, index) => byId.get(id)?.order === index + 1,
+    );
+    if (!unchanged) {
+      // Each item is conditioned on still not being archived, so one archived
+      // after the read above is never moved: the whole reorder is refused.
+      await writeUnderActiveAncestors(
+        coreTable,
+        { courseId, moduleId, lessonId },
+        (entities) =>
+          contentItemIds.map((contentItemId, index) =>
+            entities.contentItem
+              .patch({ courseId, moduleId, lessonId, contentItemId })
+              .set({ order: index + 1 })
+              .where((attr, op) => op.notExists(attr.archivedAt))
+              .commit(),
+          ),
+        () => {
+          throw lessonContentItemsChanged();
+        },
+      );
+    }
+
+    // Transactions don't return the written attributes.
+    return asContentItemOutput<IReorderContentItemsOutput>(
+      (await readItems()).sort((a, b) => a.order - b.order),
     );
   });
