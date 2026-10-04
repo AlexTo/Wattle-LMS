@@ -39,6 +39,10 @@ import { EditLessonDialog } from './-components/edit-lesson-dialog';
 import { EditModuleDialog } from './-components/edit-module-dialog';
 import { HiddenBadge } from './-components/hidden-badge';
 import { LessonContentItemsRow } from './-components/lesson-content-items-row';
+import {
+  LessonVisibilityButton,
+  ModuleVisibilityButton,
+} from './-components/visibility-buttons';
 
 export const Route = createFileRoute('/_authenticated/my-courses_/$courseId')({
   component: RouteComponent,
@@ -121,6 +125,8 @@ function RouteComponent() {
   const archiveOnDelete = course.status !== 'draft';
   // An archived course is read-only until it's restored.
   const readOnly = course.status === 'archived';
+  // A draft isn't open to students yet, which changes what Publish/Hide mean.
+  const draft = course.status === 'draft';
 
   return (
     <main className="mx-auto w-full max-w-5xl space-y-6 pb-10">
@@ -227,6 +233,14 @@ function RouteComponent() {
                     </Badge>
                     {!readOnly && (
                       <>
+                        <ModuleVisibilityButton
+                          courseId={course.courseId}
+                          moduleId={module.moduleId}
+                          title={module.title}
+                          visibility={module.visibility}
+                          draft={draft}
+                          className="ml-auto"
+                        />
                         <EditModuleDialog
                           courseId={course.courseId}
                           moduleId={module.moduleId}
@@ -238,7 +252,7 @@ function RouteComponent() {
                               size="icon-sm"
                               type="button"
                               aria-label={`Edit module ${moduleIndex + 1}`}
-                              className="ml-auto"
+                              className="-ml-2"
                             >
                               <PencilLine />
                             </Button>
@@ -316,6 +330,15 @@ function RouteComponent() {
                             </Badge>
                             {!readOnly && (
                               <>
+                                <LessonVisibilityButton
+                                  courseId={course.courseId}
+                                  moduleId={module.moduleId}
+                                  lessonId={lesson.lessonId}
+                                  title={lesson.title}
+                                  visibility={lesson.visibility}
+                                  draft={draft}
+                                  className="ml-auto"
+                                />
                                 <EditLessonDialog
                                   courseId={course.courseId}
                                   moduleId={module.moduleId}
@@ -328,7 +351,7 @@ function RouteComponent() {
                                       size="icon-sm"
                                       type="button"
                                       aria-label={`Edit lesson ${lesson.title}`}
-                                      className="ml-auto"
+                                      className="-ml-2"
                                     >
                                       <PencilLine />
                                     </Button>
@@ -362,6 +385,7 @@ function RouteComponent() {
                             contentItems={lesson.contentItems}
                             archive={archiveOnDelete}
                             readOnly={readOnly}
+                            draft={draft}
                           />
                         </article>
                       ))}

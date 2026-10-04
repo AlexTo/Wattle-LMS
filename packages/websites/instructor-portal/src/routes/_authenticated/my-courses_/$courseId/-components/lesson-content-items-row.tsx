@@ -13,6 +13,7 @@ import {
   RemoveLessonTextButton,
 } from './edit-lesson-text-dialog';
 import { HiddenBadge } from './hidden-badge';
+import { ContentItemVisibilityButton } from './visibility-buttons';
 
 export function LessonContentItemsRow({
   courseId,
@@ -21,6 +22,7 @@ export function LessonContentItemsRow({
   contentItems,
   archive,
   readOnly = false,
+  draft = false,
 }: {
   courseId: string;
   moduleId: string;
@@ -38,6 +40,8 @@ export function LessonContentItemsRow({
   archive: boolean;
   // An archived course can't be edited: no add, edit or remove controls.
   readOnly?: boolean;
+  // A draft isn't open to students yet, which changes what Publish/Hide mean.
+  draft?: boolean;
 }) {
   return (
     <div className="bg-muted/15 pb-3 pl-12 pr-4 sm:pl-24 sm:pr-5">
@@ -56,6 +60,17 @@ export function LessonContentItemsRow({
             {item.visibility === 'hidden' && <HiddenBadge />}
             {!readOnly && (
               <>
+                <ContentItemVisibilityButton
+                  courseId={courseId}
+                  moduleId={moduleId}
+                  lessonId={lessonId}
+                  contentItemId={item.contentItemId}
+                  noun="video"
+                  title={item.title}
+                  visibility={item.visibility}
+                  draft={draft}
+                  className="transition-opacity sm:opacity-0 sm:group-hover/resource:opacity-100 focus-visible:opacity-100"
+                />
                 <AttachLessonVideoDialog
                   courseId={courseId}
                   moduleId={moduleId}
@@ -101,6 +116,17 @@ export function LessonContentItemsRow({
             {item.visibility === 'hidden' && <HiddenBadge />}
             {!readOnly && (
               <>
+                <ContentItemVisibilityButton
+                  courseId={courseId}
+                  moduleId={moduleId}
+                  lessonId={lessonId}
+                  contentItemId={item.contentItemId}
+                  noun="text"
+                  title={item.title}
+                  visibility={item.visibility}
+                  draft={draft}
+                  className="transition-opacity sm:opacity-0 sm:group-hover/resource:opacity-100 focus-visible:opacity-100"
+                />
                 <EditLessonTextDialog
                   courseId={courseId}
                   moduleId={moduleId}
