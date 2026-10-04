@@ -36,6 +36,13 @@ export const createCourseEntity = async () =>
           required: true,
           default: 'draft',
         },
+        // Set when the course is first published and never cleared. A course
+        // with this set has been open to students, so archiving and
+        // restoring it can't send it back to draft, where deletes are
+        // permanent.
+        publishedAt: {
+          type: 'string',
+        },
         createdAt: {
           type: 'string',
           required: true,

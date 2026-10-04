@@ -187,6 +187,9 @@ beforeEach(() => {
   bestEffortCancelTranscodeJobs.mockResolvedValue(undefined);
   transactionWrite.mockImplementation((fn) => {
     fn({
+      course: {
+        check: () => ({ where: () => ({ commit: () => ({}) }) }),
+      },
       module: { delete: moduleDelete },
       lesson: { delete: lessonDelete },
       contentItem: { delete: contentItemDelete },

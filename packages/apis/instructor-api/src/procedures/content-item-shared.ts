@@ -7,6 +7,8 @@ import type { Logger } from '@aws-lambda-powertools/logger';
 import { TRPCError } from '@trpc/server';
 import { courseProcedure } from '../init.js';
 import {
+  courseNoLongerDraft,
+  draftCourseCheck,
   getCourseOrThrow,
   isConditionalCheckFailed,
   isDraftCourse,
@@ -154,17 +156,31 @@ export const deleteContentItem = courseProcedure
     const course = await getCourseOrThrow(coreTable, courseId);
 
     if (isDraftCourse(course)) {
-      const { data: contentItem } = await coreTable.entities.contentItem
-        .delete(key)
-        .go({ response: 'all_old' });
-      if (!contentItem) {
+      // Deleted in one transaction with a check that the course is still a
+      // draft, and conditioned on the item still being as it was read: a
+      // transaction returns no deleted attributes, so the cleanup below acts
+      // on `existing`, which this guarantees is what was removed.
+      const { canceled, data: results } = await coreTable.transaction
+        .write((entities) => [
+          entities.contentItem
+            .delete(key)
+            .where((attr, op) => op.eq(attr.updatedAt, existing.updatedAt))
+            .commit(),
+          draftCourseCheck(entities, courseId),
+        ])
+        .go();
+      if (canceled) {
+        if (results?.[1]?.code === 'ConditionalCheckFailed') {
+          throw courseNoLongerDraft();
+        }
         throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Failed to delete content item',
+          code: 'CONFLICT',
+          message:
+            'The content item changed while it was being deleted; nothing was deleted. Retry the delete',
         });
       }
-      await cleanUpDeletedContentItem(ctx.logger, contentItem);
-      return asContentItemOutput<IDeleteContentItemOutput>(contentItem);
+      await cleanUpDeletedContentItem(ctx.logger, existing);
+      return asContentItemOutput<IDeleteContentItemOutput>(existing);
     }
 
     // Already archived: archiving again is a no-op, so a retried request

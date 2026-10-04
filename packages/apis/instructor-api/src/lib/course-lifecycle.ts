@@ -88,6 +88,42 @@ export const requireAncestorsNotArchived = async (
   }
 };
 
+// Guards a permanent delete in a draft course. The draft/archive decision is
+// made from a read of the course's status, which can go stale: if the course
+// is published in between, the delete would destroy something in a course
+// students can see. Added as the last item of the delete's transaction, so it
+// lands only while the course is still a draft.
+export const draftCourseCheck = (
+  entities: TransactionEntities,
+  courseId: string,
+) =>
+  entities.course
+    .check({ courseId })
+    .where((attr, op) => op.eq(attr.status, 'draft'))
+    .commit();
+
+// DynamoDB cancels one of two transactions that touch the same records at the
+// same moment with TransactionConflict, rather than a failed condition.
+// Nothing was written and a retry is safe, so it's a CONFLICT, not a server
+// error.
+export const hasTransactionConflict = (
+  results: ({ code?: string } | undefined)[] | undefined,
+) => (results ?? []).some((result) => result?.code === 'TransactionConflict');
+
+export const transactionConflict = () =>
+  new TRPCError({
+    code: 'CONFLICT',
+    message:
+      'Another request was changing the same records; nothing was changed. Please retry',
+  });
+
+export const courseNoLongerDraft = () =>
+  new TRPCError({
+    code: 'CONFLICT',
+    message:
+      'The course was published while this was being deleted; nothing was deleted. Retry to archive it instead',
+  });
+
 // A DynamoDB conditional write whose condition didn't hold, as opposed to
 // any other failure.
 export const isConditionalCheckFailed = (error: unknown): boolean =>
@@ -153,6 +189,9 @@ const ancestorChecks = (
 //   error ("Restore the module first", NOT_FOUND), else CONFLICT;
 // - one of `writes` failed its own condition: `onWriteConflict` throws the
 //   caller's error (CONFLICT by default);
+// - another transaction was touching the same records at that moment
+//   (TransactionConflict): CONFLICT, since nothing was written and a retry
+//   is safe;
 // - anything else: INTERNAL_SERVER_ERROR.
 export const writeUnderActiveAncestors = async (
   coreTable: CoreTable,
@@ -186,6 +225,9 @@ export const writeUnderActiveAncestors = async (
   if (failedAt(ancestorCount)) {
     await onWriteConflict();
     throw conflict();
+  }
+  if (hasTransactionConflict(results)) {
+    throw transactionConflict();
   }
   throw new TRPCError({
     code: 'INTERNAL_SERVER_ERROR',

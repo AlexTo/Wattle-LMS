@@ -12,6 +12,10 @@ const {
   courseInstructorGet,
   contentItemGet,
   contentItemDelete,
+  contentItemDeleteWhere,
+  courseCheck,
+  transactionWrite,
+  transactionGo,
   bestEffortDeleteContentItemVideos,
   bestEffortCancelTranscodeJobs,
 } = vi.hoisted(() => ({
@@ -19,6 +23,10 @@ const {
   courseInstructorGet: vi.fn(),
   contentItemGet: vi.fn(),
   contentItemDelete: vi.fn(),
+  contentItemDeleteWhere: vi.fn(),
+  courseCheck: vi.fn(),
+  transactionWrite: vi.fn(),
+  transactionGo: vi.fn(),
   bestEffortDeleteContentItemVideos: vi.fn(),
   bestEffortCancelTranscodeJobs: vi.fn(),
 }));
@@ -35,6 +43,7 @@ vi.mock('@discava/core-table', () => ({
         delete: contentItemDelete,
       },
     },
+    transaction: { write: transactionWrite },
   })),
 }));
 
@@ -122,9 +131,19 @@ beforeEach(() => {
   contentItemGet.mockReturnValue({
     go: vi.fn().mockResolvedValue({ data: videoContentItem }),
   });
-  contentItemDelete.mockReturnValue({
-    go: vi.fn().mockResolvedValue({ data: videoContentItem }),
+  // The delete runs in a transaction with a check that the course is still a
+  // draft, conditioned on the item still being as it was read.
+  contentItemDelete.mockReturnValue({ where: contentItemDeleteWhere });
+  contentItemDeleteWhere.mockReturnValue({ commit: () => ({}) });
+  courseCheck.mockReturnValue({ where: () => ({ commit: () => ({}) }) });
+  transactionWrite.mockImplementation((build) => {
+    build({
+      contentItem: { delete: contentItemDelete },
+      course: { check: courseCheck },
+    });
+    return { go: transactionGo };
   });
+  transactionGo.mockResolvedValue({ canceled: false, data: [] });
   bestEffortDeleteContentItemVideos.mockResolvedValue(undefined);
   bestEffortCancelTranscodeJobs.mockResolvedValue(undefined);
 });
@@ -159,6 +178,7 @@ describe('deleteContentItem', () => {
     const result = await callAs().deleteContentItem(input);
 
     expect(contentItemDelete).toHaveBeenCalledWith(input);
+    expect(courseCheck).toHaveBeenCalledWith({ courseId: COURSE_ID });
     expect(bestEffortDeleteContentItemVideos).toHaveBeenCalledWith(
       expect.anything(),
       [videoContentItem],
@@ -181,9 +201,6 @@ describe('deleteContentItem', () => {
     contentItemGet.mockReturnValue({
       go: vi.fn().mockResolvedValue({ data: pendingVideoContentItem }),
     });
-    contentItemDelete.mockReturnValue({
-      go: vi.fn().mockResolvedValue({ data: pendingVideoContentItem }),
-    });
 
     await callAs().deleteContentItem(input);
 
@@ -194,54 +211,74 @@ describe('deleteContentItem', () => {
   });
 
   // A concurrent replacement can land between the initial read and the
-  // delete -- DeleteItem's own response: 'all_old' return is the only
-  // thing that reflects exactly what was actually removed.
-  it('cleans up the record DeleteItem actually removed, not the earlier read, when a replacement raced the delete', async () => {
-    const supersededVideo = {
-      ...videoContentItem,
-      s3Key: `courses/${COURSE_ID}/modules/${MODULE_ID}/lessons/${LESSON_ID}/content-items/${CONTENT_ITEM_ID}/old-nonce/master.m3u8`,
-      submissionNonce: 'old-nonce',
-    };
-    const replacementVideo = {
-      ...videoContentItem,
-      s3Key: `courses/${COURSE_ID}/modules/${MODULE_ID}/lessons/${LESSON_ID}/content-items/${CONTENT_ITEM_ID}/new-nonce/master.m3u8`,
-      submissionNonce: 'new-nonce',
-    };
-    contentItemGet.mockReturnValue({
-      go: vi.fn().mockResolvedValue({ data: supersededVideo }),
-    });
-    contentItemDelete.mockReturnValue({
-      go: vi.fn().mockResolvedValue({ data: replacementVideo }),
+  // delete. A transaction returns no deleted attributes to clean up from, so
+  // the delete is conditioned on the item still being as it was read, and
+  // cleans up nothing otherwise.
+  it('conditions the delete on the item still being as it was read', async () => {
+    await callAs().deleteContentItem(input);
+
+    const condition = contentItemDeleteWhere.mock.calls[0][0] as (
+      attr: Record<string, string>,
+      op: Record<string, (...args: string[]) => string>,
+    ) => string;
+    expect(
+      condition(
+        { updatedAt: 'updatedAt' },
+        { eq: (attribute, value) => `${attribute} = ${value}` },
+      ),
+    ).toBe(`updatedAt = ${videoContentItem.updatedAt}`);
+  });
+
+  it('refuses with CONFLICT and cleans up nothing when the item changed after it was read', async () => {
+    transactionGo.mockResolvedValue({
+      canceled: true,
+      data: [{ code: 'ConditionalCheckFailed' }, {}],
     });
 
-    const result = await callAs().deleteContentItem(input);
+    await expect(callAs().deleteContentItem(input)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+    expect(bestEffortCancelTranscodeJobs).not.toHaveBeenCalled();
+    expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
+  });
 
-    expect(bestEffortCancelTranscodeJobs).toHaveBeenCalledWith(
-      expect.anything(),
-      [replacementVideo],
-    );
-    expect(bestEffortDeleteContentItemVideos).toHaveBeenCalledWith(
-      expect.anything(),
-      [replacementVideo],
-    );
-    expect(bestEffortCancelTranscodeJobs).not.toHaveBeenCalledWith(
-      expect.anything(),
-      [supersededVideo],
-    );
-    expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalledWith(
-      expect.anything(),
-      [supersededVideo],
-    );
-    // submissionNonce is internal-only and stripped by the output schema --
-    // s3Key is what distinguishes the replacement from the superseded video.
-    expect(result.s3Key).toEqual(replacementVideo.s3Key);
+  // Invariant: the delete is permanent only while the course is a draft. A
+  // publish that lands after the status read must not turn it into a
+  // permanent delete in a course students can see.
+  it('is guarded by the course still being a draft', async () => {
+    const whereSpy = vi.fn().mockReturnValue({ commit: () => ({}) });
+    courseCheck.mockReturnValue({ where: whereSpy });
+
+    await callAs().deleteContentItem(input);
+
+    const condition = whereSpy.mock.calls[0][0] as (
+      attr: Record<string, string>,
+      op: Record<string, (...args: string[]) => string>,
+    ) => string;
+    expect(
+      condition(
+        { status: 'status' },
+        { eq: (attribute, value) => `${attribute} = ${value}` },
+      ),
+    ).toBe('status = draft');
+  });
+
+  it('refuses once the course is published, and cleans up nothing', async () => {
+    transactionGo.mockResolvedValue({
+      canceled: true,
+      data: [{}, { code: 'ConditionalCheckFailed' }],
+    });
+
+    await expect(callAs().deleteContentItem(input)).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: expect.stringContaining('was published'),
+    });
+    expect(bestEffortCancelTranscodeJobs).not.toHaveBeenCalled();
+    expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
   });
 
   it('deletes a text content item without attempting an S3 cleanup or job cancellation', async () => {
     contentItemGet.mockReturnValue({
-      go: vi.fn().mockResolvedValue({ data: textContentItem }),
-    });
-    contentItemDelete.mockReturnValue({
       go: vi.fn().mockResolvedValue({ data: textContentItem }),
     });
 
