@@ -215,6 +215,7 @@ beforeEach(() => {
   });
   transactionWrite.mockImplementation((fn) => {
     fn({
+      course: { check: ancestorCheck },
       module: { check: ancestorCheck },
       lesson: { check: ancestorCheck },
       contentItem: { create: contentItemCreate, patch: contentItemPatch },
@@ -326,12 +327,25 @@ describe('createContentItemQuiz', () => {
   it('reports CONFLICT when an ancestor was archived after the checks', async () => {
     transactionGo.mockResolvedValue({
       canceled: true,
-      data: [{ code: 'ConditionalCheckFailed' }, {}, {}],
+      data: [{ code: 'ConditionalCheckFailed' }, {}, {}, {}],
     });
 
     await expect(callAs().createContentItemQuiz(input)).rejects.toMatchObject({
       code: 'CONFLICT',
     });
+  });
+
+  // An archived course is read-only: no quiz is created in it.
+  it('refuses to add a quiz to an archived course', async () => {
+    courseGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({ data: { status: 'archived' } }),
+    });
+
+    await expect(callAs().createContentItemQuiz(input)).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the course first',
+    });
+    expect(transactionWrite).not.toHaveBeenCalled();
   });
 
   describe('validation', () => {
@@ -488,6 +502,18 @@ describe('updateContentItemQuiz', () => {
     expect(contentItemPatch).not.toHaveBeenCalled();
   });
 
+  it('refuses to edit a quiz in an archived course', async () => {
+    courseGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({ data: { status: 'archived' } }),
+    });
+
+    await expect(callAs().updateContentItemQuiz(input)).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the course first',
+    });
+    expect(transactionWrite).not.toHaveBeenCalled();
+  });
+
   it('throws NOT_FOUND when the content item does not exist', async () => {
     contentItemGet.mockReturnValue({
       go: vi.fn().mockResolvedValue({ data: undefined }),
@@ -640,7 +666,7 @@ describe('updateContentItemQuiz', () => {
   it('reports CONFLICT when another save landed first', async () => {
     transactionGo.mockResolvedValue({
       canceled: true,
-      data: [{}, {}, { code: 'ConditionalCheckFailed' }],
+      data: [{}, {}, {}, { code: 'ConditionalCheckFailed' }],
     });
 
     await expect(callAs().updateContentItemQuiz(input)).rejects.toMatchObject({
@@ -651,7 +677,7 @@ describe('updateContentItemQuiz', () => {
   it('reports the archive, not a conflict, when the quiz was archived after the checks', async () => {
     transactionGo.mockResolvedValue({
       canceled: true,
-      data: [{}, {}, { code: 'ConditionalCheckFailed' }],
+      data: [{}, {}, {}, { code: 'ConditionalCheckFailed' }],
     });
     contentItemGet
       .mockReturnValueOnce({

@@ -119,6 +119,8 @@ function RouteComponent() {
   const status = courseStatusLabels[course.status] ?? 'Draft';
   // Outside a draft course, delete archives instead of destroying anything.
   const archiveOnDelete = course.status !== 'draft';
+  // An archived course is read-only until it's restored.
+  const readOnly = course.status === 'archived';
 
   return (
     <main className="mx-auto w-full max-w-5xl space-y-6 pb-10">
@@ -153,6 +155,16 @@ function RouteComponent() {
         </div>
       </section>
 
+      {readOnly && (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground"
+        >
+          <Info className="mt-0.5 size-4 shrink-0" /> This course is archived,
+          so it can't be edited. Restore it to make changes.
+        </div>
+      )}
+
       <section aria-labelledby="content-heading" className="space-y-4">
         <div>
           <div className="flex items-center gap-2">
@@ -179,14 +191,16 @@ function RouteComponent() {
                 Modules are the top-level sections of a course. Lessons live
                 inside them.
               </p>
-              <CreateModuleDialog
-                courseId={course.courseId}
-                trigger={
-                  <Button className="mt-5" type="button">
-                    <CirclePlus /> New module
-                  </Button>
-                }
-              />
+              {!readOnly && (
+                <CreateModuleDialog
+                  courseId={course.courseId}
+                  trigger={
+                    <Button className="mt-5" type="button">
+                      <CirclePlus /> New module
+                    </Button>
+                  }
+                />
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -211,41 +225,45 @@ function RouteComponent() {
                       {module.lessons.length}{' '}
                       {module.lessons.length === 1 ? 'lesson' : 'lessons'}
                     </Badge>
-                    <EditModuleDialog
-                      courseId={course.courseId}
-                      moduleId={module.moduleId}
-                      title={module.title}
-                      description={module.description}
-                      trigger={
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          type="button"
-                          aria-label={`Edit module ${moduleIndex + 1}`}
-                          className="ml-auto"
-                        >
-                          <PencilLine />
-                        </Button>
-                      }
-                    />
-                    <DeleteModuleDialog
-                      courseId={course.courseId}
-                      moduleId={module.moduleId}
-                      title={module.title}
-                      lessonCount={module.lessons.length}
-                      archive={archiveOnDelete}
-                      trigger={
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          type="button"
-                          aria-label={`Remove module ${moduleIndex + 1}`}
-                          className="-ml-2"
-                        >
-                          <Trash2 />
-                        </Button>
-                      }
-                    />
+                    {!readOnly && (
+                      <>
+                        <EditModuleDialog
+                          courseId={course.courseId}
+                          moduleId={module.moduleId}
+                          title={module.title}
+                          description={module.description}
+                          trigger={
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              type="button"
+                              aria-label={`Edit module ${moduleIndex + 1}`}
+                              className="ml-auto"
+                            >
+                              <PencilLine />
+                            </Button>
+                          }
+                        />
+                        <DeleteModuleDialog
+                          courseId={course.courseId}
+                          moduleId={module.moduleId}
+                          title={module.title}
+                          lessonCount={module.lessons.length}
+                          archive={archiveOnDelete}
+                          trigger={
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              type="button"
+                              aria-label={`Remove module ${moduleIndex + 1}`}
+                              className="-ml-2"
+                            >
+                              <Trash2 />
+                            </Button>
+                          }
+                        />
+                      </>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -261,15 +279,17 @@ function RouteComponent() {
                         Lessons hold the content students work through inside
                         this module.
                       </p>
-                      <CreateLessonDialog
-                        courseId={course.courseId}
-                        moduleId={module.moduleId}
-                        trigger={
-                          <Button className="mt-2" size="sm" type="button">
-                            <CirclePlus /> New lesson
-                          </Button>
-                        }
-                      />
+                      {!readOnly && (
+                        <CreateLessonDialog
+                          courseId={course.courseId}
+                          moduleId={module.moduleId}
+                          trigger={
+                            <Button className="mt-2" size="sm" type="button">
+                              <CirclePlus /> New lesson
+                            </Button>
+                          }
+                        />
+                      )}
                     </div>
                   ) : (
                     <>
@@ -294,42 +314,46 @@ function RouteComponent() {
                             >
                               Lesson
                             </Badge>
-                            <EditLessonDialog
-                              courseId={course.courseId}
-                              moduleId={module.moduleId}
-                              lessonId={lesson.lessonId}
-                              title={lesson.title}
-                              description={lesson.description}
-                              trigger={
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  type="button"
-                                  aria-label={`Edit lesson ${lesson.title}`}
-                                  className="ml-auto"
-                                >
-                                  <PencilLine />
-                                </Button>
-                              }
-                            />
-                            <DeleteLessonDialog
-                              courseId={course.courseId}
-                              moduleId={module.moduleId}
-                              lessonId={lesson.lessonId}
-                              title={lesson.title}
-                              archive={archiveOnDelete}
-                              trigger={
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  type="button"
-                                  aria-label={`Remove lesson ${lesson.title}`}
-                                  className="-ml-2"
-                                >
-                                  <Trash2 />
-                                </Button>
-                              }
-                            />
+                            {!readOnly && (
+                              <>
+                                <EditLessonDialog
+                                  courseId={course.courseId}
+                                  moduleId={module.moduleId}
+                                  lessonId={lesson.lessonId}
+                                  title={lesson.title}
+                                  description={lesson.description}
+                                  trigger={
+                                    <Button
+                                      variant="ghost"
+                                      size="icon-sm"
+                                      type="button"
+                                      aria-label={`Edit lesson ${lesson.title}`}
+                                      className="ml-auto"
+                                    >
+                                      <PencilLine />
+                                    </Button>
+                                  }
+                                />
+                                <DeleteLessonDialog
+                                  courseId={course.courseId}
+                                  moduleId={module.moduleId}
+                                  lessonId={lesson.lessonId}
+                                  title={lesson.title}
+                                  archive={archiveOnDelete}
+                                  trigger={
+                                    <Button
+                                      variant="ghost"
+                                      size="icon-sm"
+                                      type="button"
+                                      aria-label={`Remove lesson ${lesson.title}`}
+                                      className="-ml-2"
+                                    >
+                                      <Trash2 />
+                                    </Button>
+                                  }
+                                />
+                              </>
+                            )}
                           </div>
                           <LessonContentItemsRow
                             courseId={course.courseId}
@@ -337,44 +361,51 @@ function RouteComponent() {
                             lessonId={lesson.lessonId}
                             contentItems={lesson.contentItems}
                             archive={archiveOnDelete}
+                            readOnly={readOnly}
                           />
                         </article>
                       ))}
-                      <div className="flex flex-wrap items-center justify-end gap-2 border-t bg-muted/20 px-4 py-3 sm:pl-12 sm:pr-5">
-                        <CreateLessonDialog
-                          courseId={course.courseId}
-                          moduleId={module.moduleId}
-                          trigger={
-                            <Button variant="outline" size="sm" type="button">
-                              <FileText /> New lesson
-                            </Button>
-                          }
-                        />
-                      </div>
+                      {!readOnly && (
+                        <div className="flex flex-wrap items-center justify-end gap-2 border-t bg-muted/20 px-4 py-3 sm:pl-12 sm:pr-5">
+                          <CreateLessonDialog
+                            courseId={course.courseId}
+                            moduleId={module.moduleId}
+                            trigger={
+                              <Button variant="outline" size="sm" type="button">
+                                <FileText /> New lesson
+                              </Button>
+                            }
+                          />
+                        </div>
+                      )}
                     </>
                   )}
                 </CardContent>
               </Card>
             ))}
-            <div className="flex justify-end">
-              <CreateModuleDialog
-                courseId={course.courseId}
-                trigger={
-                  <Button type="button" variant="outline">
-                    <CirclePlus /> New module
-                  </Button>
-                }
-              />
-            </div>
+            {!readOnly && (
+              <div className="flex justify-end">
+                <CreateModuleDialog
+                  courseId={course.courseId}
+                  trigger={
+                    <Button type="button" variant="outline">
+                      <CirclePlus /> New module
+                    </Button>
+                  }
+                />
+              </div>
+            )}
           </div>
         )}
       </section>
 
-      <div className="flex items-start gap-2 rounded-xl border border-dashed bg-muted/30 p-4 text-xs leading-5 text-muted-foreground">
-        <Info className="mt-0.5 size-4 shrink-0" /> Modules and lessons shown
-        here are live, and you can add new ones, edit or delete lessons or
-        modules. Reordering isn't wired up yet.
-      </div>
+      {!readOnly && (
+        <div className="flex items-start gap-2 rounded-xl border border-dashed bg-muted/30 p-4 text-xs leading-5 text-muted-foreground">
+          <Info className="mt-0.5 size-4 shrink-0" /> Modules and lessons shown
+          here are live, and you can add new ones, edit or delete lessons or
+          modules. Reordering isn't wired up yet.
+        </div>
+      )}
     </main>
   );
 }

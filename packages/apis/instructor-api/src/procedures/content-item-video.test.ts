@@ -25,6 +25,7 @@ const {
   contentItemPatchRemove,
   contentItemPatchWhere,
   contentItemDelete,
+  courseCheck,
   moduleCheck,
   lessonCheck,
   transactionWrite,
@@ -51,6 +52,7 @@ const {
   contentItemPatchRemove: vi.fn(),
   contentItemPatchWhere: vi.fn(),
   contentItemDelete: vi.fn(),
+  courseCheck: vi.fn(),
   moduleCheck: vi.fn(),
   lessonCheck: vi.fn(),
   transactionWrite: vi.fn(),
@@ -189,6 +191,7 @@ const committable = (chain: any): any => {
 // through the same mocks as direct writes, so assertions on contentItemPatch/
 // contentItemPatchSet/contentItemPatchWhere/etc hold either way.
 const transactionEntities = {
+  course: { check: (key: unknown) => committable(courseCheck(key)) },
   module: { check: (key: unknown) => committable(moduleCheck(key)) },
   lesson: { check: (key: unknown) => committable(lessonCheck(key)) },
   contentItem: {
@@ -340,8 +343,11 @@ beforeEach(() => {
       go: vi.fn().mockResolvedValue({ data: contentItem }),
     }),
   });
-  // The module and lesson are still there and not archived when the
+  // The course, module and lesson are still there and not archived when the
   // transaction lands, unless a test says otherwise.
+  courseCheck.mockReturnValue({
+    where: () => ({ go: vi.fn().mockResolvedValue({}) }),
+  });
   moduleCheck.mockReturnValue({
     where: () => ({ go: vi.fn().mockResolvedValue({}) }),
   });
@@ -386,6 +392,26 @@ describe('createContentItemVideoUploadUrl', () => {
     ).rejects.toMatchObject({
       code: 'PRECONDITION_FAILED',
       message: 'Restore the lesson before adding content to it',
+    });
+    expect(getSignedUrl).not.toHaveBeenCalled();
+  });
+
+  // An archived course is read-only: no upload is left behind in it either.
+  it('refuses an archived course without minting an upload URL', async () => {
+    courseGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({ data: { status: 'archived' } }),
+    });
+
+    await expect(
+      callAs().createContentItemVideoUploadUrl({
+        courseId: COURSE_ID,
+        moduleId: MODULE_ID,
+        lessonId: LESSON_ID,
+        fileName: 'intro.mp4',
+      }),
+    ).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the course first',
     });
     expect(getSignedUrl).not.toHaveBeenCalled();
   });
@@ -640,11 +666,11 @@ describe('createContentItemVideo', () => {
   });
 
   // Invariant: same as every other new record -- visible straight away in a
-  // draft course, hidden until published in any other course.
+  // draft course, hidden until published in a published one. (An archived
+  // course is read-only: see below.)
   it.each([
     ['draft', 'visible'],
     ['published', 'hidden'],
-    ['archived', 'hidden'],
   ] as const)(
     'in a %s course, creates the video record as %s',
     async (status, visibility) => {
@@ -659,6 +685,23 @@ describe('createContentItemVideo', () => {
       );
     },
   );
+
+  // An archived course is read-only: nothing is created in it, and no
+  // transcode is submitted.
+  it('refuses to create a video in an archived course', async () => {
+    courseGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({ data: { status: 'archived' } }),
+    });
+
+    await expect(
+      callAs().createContentItemVideo(validInput),
+    ).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the course first',
+    });
+    expect(contentItemCreate).not.toHaveBeenCalled();
+    expect(transactionWrite).not.toHaveBeenCalled();
+  });
 
   it('throws NOT_FOUND when the course does not exist', async () => {
     courseGet.mockReturnValue({
@@ -1029,6 +1072,19 @@ describe('updateContentItemVideo', () => {
       code: 'NOT_FOUND',
     });
     expect(contentItemPatch).not.toHaveBeenCalled();
+  });
+
+  it('refuses to edit a video in an archived course, without touching MediaConvert', async () => {
+    courseGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({ data: { status: 'archived' } }),
+    });
+
+    await expect(callAs().updateContentItemVideo(input)).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the course first',
+    });
+    expect(contentItemPatch).not.toHaveBeenCalled();
+    expect(transactionWrite).not.toHaveBeenCalled();
   });
 
   it('refuses a replacement, without touching MediaConvert, when the lesson is archived in the meantime', async () => {

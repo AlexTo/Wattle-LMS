@@ -7,17 +7,20 @@ import { TRPCError } from '@trpc/server';
 import { v7 as uuidv7 } from 'uuid';
 import { courseProcedure } from '../init.js';
 import {
+  activeCourseCheck,
   courseNoLongerDraft,
   draftCourseCheck,
   getCourseOrThrow,
   hasTransactionConflict,
   initialVisibility,
-  isConditionalCheckFailed,
   isDraftCourse,
   MAX_TRANSACTION_ITEMS,
+  requireActiveCourse,
   requireCourseInstructor,
+  requireCourseNotArchived,
   requireNotArchived,
   transactionConflict,
+  writeInActiveCourse,
 } from '../lib/course-lifecycle.js';
 import { bestEffortCancelTranscodeJobs } from '../lib/mediaconvert-client.js';
 import { bestEffortDeleteContentItemVideos } from '../lib/s3-client.js';
@@ -55,8 +58,9 @@ const getModuleOrThrow = async (
   return module;
 };
 
-// Patches a module only while it's still not archived, so an archive landing
-// after the caller's own check can't be written past.
+// Patches a module only while it's still not archived and its course isn't
+// archived either, in one transaction, so an archive landing after the
+// caller's own checks can't be written past.
 const patchUnarchivedModule = async (
   coreTable: CoreTable,
   courseId: string,
@@ -66,24 +70,27 @@ const patchUnarchivedModule = async (
   },
   archivedMessage: string,
 ) => {
-  try {
-    const { data: module } = await coreTable.entities.module
-      .patch({ courseId, moduleId })
-      .set(set)
-      .where((attr, op) => op.notExists(attr.archivedAt))
-      .go({ response: 'all_new' });
-    return module;
-  } catch (error) {
-    if (!isConditionalCheckFailed(error)) {
-      throw error;
-    }
-    const module = await getModuleOrThrow(coreTable, courseId, moduleId);
-    requireNotArchived(module, archivedMessage);
-    throw new TRPCError({
-      code: 'CONFLICT',
-      message: 'The module was modified by another request; please retry',
-    });
-  }
+  await writeInActiveCourse(
+    coreTable,
+    courseId,
+    (entities) => [
+      entities.module
+        .patch({ courseId, moduleId })
+        .set(set)
+        .where((attr, op) => op.notExists(attr.archivedAt))
+        .commit(),
+    ],
+    async () => {
+      const module = await getModuleOrThrow(coreTable, courseId, moduleId);
+      requireNotArchived(module, archivedMessage);
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message: 'The module was modified by another request; please retry',
+      });
+    },
+  );
+  // Transactions don't return the written attributes.
+  return getModuleOrThrow(coreTable, courseId, moduleId);
 };
 
 // Content items share the same sk prefix as their parent lesson (moduleId,
@@ -236,6 +243,7 @@ export const createModule = courseProcedure
 
     await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
     const course = await getCourseOrThrow(coreTable, courseId);
+    requireCourseNotArchived(course);
 
     // New modules append to the end of the course. `order` isn't part of any
     // key (module counts per course are small enough to sort client-side),
@@ -246,18 +254,23 @@ export const createModule = courseProcedure
     const order =
       modules.reduce((max, module) => Math.max(max, module.order), 0) + 1;
 
-    const { data: module } = await coreTable.entities.module
-      .create({
-        moduleId: uuidv7(),
-        courseId,
-        title,
-        description,
-        order,
-        visibility: initialVisibility(course),
-      })
-      .go();
+    // Created behind a check that the course still isn't archived.
+    const moduleId = uuidv7();
+    await writeInActiveCourse(coreTable, courseId, (entities) => [
+      entities.module
+        .create({
+          moduleId,
+          courseId,
+          title,
+          description,
+          order,
+          visibility: initialVisibility(course),
+        })
+        .commit(),
+    ]);
 
-    return module;
+    // Transactions don't return the written attributes.
+    return getModuleOrThrow(coreTable, courseId, moduleId);
   });
 
 export const updateModule = courseProcedure
@@ -268,6 +281,7 @@ export const updateModule = courseProcedure
     const { courseId, moduleId, title, description, order } = input;
 
     await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
+    await requireActiveCourse(coreTable, courseId);
     const existing = await getModuleOrThrow(coreTable, courseId, moduleId);
     requireNotArchived(existing, 'Restore the module before editing it');
 
@@ -321,16 +335,22 @@ export const deleteModule = courseProcedure
       return existing;
     }
 
+    // An archived course is read-only, so nothing in it is archived either.
+    requireCourseNotArchived(course);
+
     // Only the module itself is marked archived. Its lessons and content
     // items are hidden from students because their ancestor is archived,
     // which keeps this a single write regardless of the module's size and
     // lets a restore bring back exactly what was there.
-    const { data: module } = await coreTable.entities.module
-      .patch({ courseId, moduleId })
-      .set({ archivedAt: new Date().toISOString() })
-      .go({ response: 'all_new' });
+    await writeInActiveCourse(coreTable, courseId, (entities) => [
+      entities.module
+        .patch({ courseId, moduleId })
+        .set({ archivedAt: new Date().toISOString() })
+        .commit(),
+    ]);
 
-    return module;
+    // Transactions don't return the written attributes.
+    return getModuleOrThrow(coreTable, courseId, moduleId);
   });
 
 // Publishes the module along with every hidden lesson and content item under
@@ -347,6 +367,7 @@ export const publishModule = courseProcedure
     const { courseId, moduleId } = input;
 
     await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
+    await requireActiveCourse(coreTable, courseId);
     const existing = await getModuleOrThrow(coreTable, courseId, moduleId);
     requireNotArchived(existing, 'Restore the module before publishing it');
 
@@ -387,10 +408,10 @@ export const publishModule = courseProcedure
     ) {
       return existing;
     }
-    // The transaction always carries a write or check on the module itself,
-    // plus the lesson checks above.
+    // The transaction always carries a write or check on the module itself and
+    // one on the course, plus the lesson checks above.
     if (
-      1 +
+      2 +
         lessonsToPublish.length +
         lessonIdsToCheck.length +
         contentItemsToPublish.length >
@@ -441,9 +462,15 @@ export const publishModule = courseProcedure
             .where((attr, op) => op.notExists(attr.archivedAt))
             .commit(),
         ),
+        // Last, so every index above still names what it checks: the course
+        // must still not be archived (it is read-only once it is).
+        activeCourseCheck(entities, courseId),
       ])
       .go();
     if (canceled) {
+      if (transactionResults?.at(-1)?.code === 'ConditionalCheckFailed') {
+        await requireActiveCourse(coreTable, courseId);
+      }
       if (transactionResults?.[0]?.code === 'ConditionalCheckFailed') {
         const module = await getModuleOrThrow(coreTable, courseId, moduleId);
         requireNotArchived(module, 'Restore the module before publishing it');
@@ -473,6 +500,7 @@ export const hideModule = courseProcedure
     const { courseId, moduleId } = input;
 
     await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
+    await requireActiveCourse(coreTable, courseId);
     const existing = await getModuleOrThrow(coreTable, courseId, moduleId);
     requireNotArchived(existing, 'Restore the module before hiding it');
     if (existing.visibility === 'hidden') {
@@ -500,15 +528,20 @@ export const restoreModule = courseProcedure
     if (!existing.archivedAt) {
       return existing;
     }
+    // An archived course is read-only: restore the course first.
+    await requireActiveCourse(coreTable, courseId);
 
     // `order` was never touched by archiving, so the module returns to its
     // original position.
-    const { data: module } = await coreTable.entities.module
-      .patch({ courseId, moduleId })
-      .remove(['archivedAt'])
-      .go({ response: 'all_new' });
+    await writeInActiveCourse(coreTable, courseId, (entities) => [
+      entities.module
+        .patch({ courseId, moduleId })
+        .remove(['archivedAt'])
+        .commit(),
+    ]);
 
-    return module;
+    // Transactions don't return the written attributes.
+    return getModuleOrThrow(coreTable, courseId, moduleId);
   });
 
 // Removes an archived module and everything under it for good. Refused while

@@ -12,9 +12,12 @@ import {
   getCourseOrThrow,
   isConditionalCheckFailed,
   isDraftCourse,
+  requireActiveCourse,
   requireAncestorsNotArchived,
   requireCourseInstructor,
+  requireCourseNotArchived,
   requireNotArchived,
+  writeInActiveCourse,
   writeUnderActiveAncestors,
 } from '../lib/course-lifecycle.js';
 import {
@@ -189,14 +192,22 @@ export const deleteContentItem = courseProcedure
       return asContentItemOutput<IDeleteContentItemOutput>(existing);
     }
 
+    // An archived course is read-only, so nothing in it is archived either.
+    requireCourseNotArchived(course);
+
     // Archiving keeps a video's S3 objects and any running transcode: the
     // item can be restored.
-    const { data: contentItem } = await coreTable.entities.contentItem
-      .patch(key)
-      .set({ archivedAt: new Date().toISOString() })
-      .go({ response: 'all_new' });
+    await writeInActiveCourse(coreTable, courseId, (entities) => [
+      entities.contentItem
+        .patch(key)
+        .set({ archivedAt: new Date().toISOString() })
+        .commit(),
+    ]);
 
-    return asContentItemOutput<IDeleteContentItemOutput>(contentItem);
+    // Transactions don't return the written attributes.
+    return asContentItemOutput<IDeleteContentItemOutput>(
+      await getContentItemOrThrow(coreTable, key),
+    );
   });
 
 // Students still don't see the item until its lesson and module are visible
@@ -272,6 +283,8 @@ export const restoreContentItem = courseProcedure
     if (!existing.archivedAt) {
       return asContentItemOutput<IRestoreContentItemOutput>(existing);
     }
+    // An archived course is read-only: restore the course first.
+    await requireActiveCourse(coreTable, courseId);
 
     const [{ data: module }, { data: lesson }] = await Promise.all([
       coreTable.entities.module.get({ courseId, moduleId }).go(),

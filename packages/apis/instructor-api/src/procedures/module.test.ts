@@ -190,19 +190,29 @@ beforeEach(() => {
       course: {
         check: () => ({ where: () => ({ commit: () => ({}) }) }),
       },
-      module: { delete: moduleDelete },
+      module: {
+        create: moduleCreate,
+        patch: modulePatch,
+        delete: moduleDelete,
+      },
       lesson: { delete: lessonDelete },
       contentItem: { delete: contentItemDelete },
     });
     return { go: transactionGo };
   });
   transactionGo.mockResolvedValue({ canceled: false, data: [] });
+  // Created and patched in a transaction behind a check on the course, so
+  // the chains end in .commit(); the result is read back with get.
   moduleCreate.mockReturnValue({
     go: vi.fn().mockResolvedValue({ data: module }),
+    commit: () => ({}),
   });
   // patch(key).set(values).where(notArchived).go()
   modulePatchSet.mockReturnValue({
-    where: () => ({ go: vi.fn().mockResolvedValue({ data: module }) }),
+    where: () => ({
+      go: vi.fn().mockResolvedValue({ data: module }),
+      commit: () => ({}),
+    }),
   });
   modulePatch.mockReturnValue({ set: modulePatchSet });
 });
@@ -358,11 +368,15 @@ describe('updateModule', () => {
 
   it('returns the updated module', async () => {
     const updatedModule = { ...module, title: 'Updated title' };
-    modulePatchSet.mockReturnValue({
-      where: () => ({
+    // Transactions don't return the written attributes: the module is read
+    // back after the update lands.
+    moduleGet
+      .mockReturnValueOnce({
+        go: vi.fn().mockResolvedValue({ data: module }),
+      })
+      .mockReturnValueOnce({
         go: vi.fn().mockResolvedValue({ data: updatedModule }),
-      }),
-    });
+      });
 
     const result = await callAs().updateModule({
       courseId: COURSE_ID,

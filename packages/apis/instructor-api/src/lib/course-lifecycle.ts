@@ -57,11 +57,37 @@ export const requireNotArchived = (
   }
 };
 
+// An archived course is read-only: nothing in it can be added, edited,
+// published, hidden, archived or restored until the course is restored. What
+// stays possible is permanently deleting records that are already archived,
+// so an archived course can be cleaned up without restoring it (which would
+// show it to students again).
+export const requireCourseNotArchived = (course: { status: string }) => {
+  if (course.status === 'archived') {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the course first',
+    });
+  }
+};
+
+// Reads the course and refuses if it's archived, for writes that sit directly
+// under it and have no module to read.
+export const requireActiveCourse = async (
+  coreTable: CoreTable,
+  courseId: string,
+) => {
+  const course = await getCourseOrThrow(coreTable, courseId);
+  requireCourseNotArchived(course);
+  return course;
+};
+
 // An archived module or lesson freezes everything under it: nothing beneath
 // it can be added, edited, published or hidden until it's restored, so a
-// restore brings back exactly what was archived. Checks the module, and the
-// lesson too when `lessonId` is given; the module is checked first, matching
-// the order restores have to happen in.
+// restore brings back exactly what was archived. Checks the course first (an
+// archived course is read-only, see requireCourseNotArchived), then the
+// module, and the lesson too when `lessonId` is given, matching the order
+// restores have to happen in.
 export const requireAncestorsNotArchived = async (
   coreTable: CoreTable,
   {
@@ -70,12 +96,17 @@ export const requireAncestorsNotArchived = async (
     lessonId,
   }: { courseId: string; moduleId: string; lessonId?: string },
 ) => {
-  const [{ data: module }, lessonResult] = await Promise.all([
+  const [{ data: course }, { data: module }, lessonResult] = await Promise.all([
+    coreTable.entities.course.get({ courseId }).go(),
     coreTable.entities.module.get({ courseId, moduleId }).go(),
     lessonId === undefined
       ? Promise.resolve(undefined)
       : coreTable.entities.lesson.get({ courseId, moduleId, lessonId }).go(),
   ]);
+  if (!course) {
+    throw new TRPCError({ code: 'NOT_FOUND' });
+  }
+  requireCourseNotArchived(course);
   if (!module) {
     throw new TRPCError({ code: 'NOT_FOUND' });
   }
@@ -150,13 +181,30 @@ const conflict = () =>
     message: 'The record was modified by another request; please retry',
   });
 
-// Condition checks that let a transaction land only while every ancestor
-// still exists and isn't archived. They go first in the transaction: their
-// position is how a cancellation is attributed back to them.
+// Lets a transaction land only while the course exists and isn't archived: an
+// archived course is read-only (see requireCourseNotArchived), and a check made
+// from an earlier read could be overtaken by the course being archived.
+export const activeCourseCheck = (
+  entities: TransactionEntities,
+  courseId: string,
+) =>
+  entities.course
+    .check({ courseId })
+    .where(
+      (attr, op) =>
+        `${op.exists(attr.courseId)} AND ${op.ne(attr.status, 'archived')}`,
+    )
+    .commit();
+
+// Condition checks that let a transaction land only while the course and
+// every ancestor still exist and aren't archived. They go first in the
+// transaction: their position is how a cancellation is attributed back to
+// them.
 const ancestorChecks = (
   entities: TransactionEntities,
   { courseId, moduleId, lessonId }: AncestorKey,
 ) => [
+  activeCourseCheck(entities, courseId),
   entities.module
     .check({ courseId, moduleId })
     .where(
@@ -186,7 +234,8 @@ const ancestorChecks = (
 //
 // On cancellation:
 // - an ancestor's check failed: re-checks the ancestors to throw the precise
-//   error ("Restore the module first", NOT_FOUND), else CONFLICT;
+//   error ("Restore the course first", "Restore the module first",
+//   NOT_FOUND), else CONFLICT;
 // - one of `writes` failed its own condition: `onWriteConflict` throws the
 //   caller's error (CONFLICT by default);
 // - another transaction was touching the same records at that moment
@@ -211,7 +260,8 @@ export const writeUnderActiveAncestors = async (
     return;
   }
 
-  const ancestorCount = ancestors.lessonId === undefined ? 1 : 2;
+  // The course, the module, and the lesson when there is one.
+  const ancestorCount = ancestors.lessonId === undefined ? 2 : 3;
   const results: ({ code?: string } | undefined)[] = data ?? [];
   const failedAt = (from: number, to?: number) =>
     results
@@ -223,6 +273,60 @@ export const writeUnderActiveAncestors = async (
     throw conflict();
   }
   if (failedAt(ancestorCount)) {
+    await onWriteConflict();
+    throw conflict();
+  }
+  if (hasTransactionConflict(results)) {
+    throw transactionConflict();
+  }
+  throw new TRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: 'Failed to save the change',
+  });
+};
+
+// Like writeUnderActiveAncestors for a write that sits directly under the
+// course (a module, or the archive of any record): runs `writes` in one
+// transaction behind a check that the course still exists and isn't
+// archived. Cancellations are attributed the same way: the course check
+// failed (a precise "Restore the course first", else CONFLICT), a write
+// failed its own condition (`onWriteConflict`), a transaction conflict
+// (CONFLICT), anything else (INTERNAL_SERVER_ERROR).
+export const writeInActiveCourse = async (
+  coreTable: CoreTable,
+  courseId: string,
+  writes: (entities: TransactionEntities) => TransactionItems,
+  onWriteConflict: () => Promise<never> | never = () => {
+    throw conflict();
+  },
+) => {
+  const { canceled, data } = await coreTable.transaction
+    .write((entities) => [
+      activeCourseCheck(entities, courseId),
+      ...writes(entities),
+    ])
+    .go();
+  if (!canceled) {
+    return;
+  }
+
+  const results: ({ code?: string } | undefined)[] = data ?? [];
+  const failedAt = (from: number) =>
+    results
+      .slice(from)
+      .some((result) => result?.code === 'ConditionalCheckFailed');
+
+  if (results[0]?.code === 'ConditionalCheckFailed') {
+    const { data: course } = await coreTable.entities.course
+      .get({ courseId })
+      .go();
+    if (!course) {
+      throw new TRPCError({ code: 'NOT_FOUND' });
+    }
+    requireCourseNotArchived(course);
+    throw conflict();
+  }
+  if (failedAt(1)) {
     await onWriteConflict();
     throw conflict();
   }

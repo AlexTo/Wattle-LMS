@@ -122,9 +122,9 @@ direction: down
 
 start: "contentItem.updateQuiz\n(sends the quizVersion\nthe editor loaded)" {shape: oval}
 access: "Instructor of this\ncourse, and the item\nis a quiz?" {shape: diamond}
-archived: "Quiz, its lesson or its\nmodule archived?" {shape: diamond}
+archived: "Quiz, its lesson, module\nor course archived?" {shape: diamond}
 stale: "Stored quizVersion\n= the one sent?" {shape: diamond}
-write: "One transaction: module and lesson still\nexist and aren't archived, quiz isn't\narchived and is still at that quizVersion.\nWrites the new content, quizVersion + 1\nand the recomputed questionsHash"
+write: "One transaction: course, module and lesson\nstill exist and aren't archived, quiz isn't\narchived and is still at that quizVersion.\nWrites the new content, quizVersion + 1\nand the recomputed questionsHash"
 landed: "Did a condition fail?" {shape: diamond}
 
 forbidden: "FORBIDDEN or BAD_REQUEST"
@@ -148,7 +148,7 @@ landed -> done: no
 - Of two saves made from the same version, exactly one lands; the other gets `CONFLICT`. The check is repeated inside the write's transaction, so it holds when the saves are simultaneous, not only when one follows the other.
 - A save that succeeds returns the new `quizVersion`, which the editor uses for its next save.
 - `questionsHash` is recomputed from `questions` only, so a save that changes just the answer key, explanations or settings keeps the same hash.
-- Creating a quiz starts it at `quizVersion` 1. Like other new content, it starts `visible` in a draft course and `hidden` otherwise, and it can't be created or edited under an archived module or lesson (see <Link path="design/live-course-editing">Live course editing</Link>).
+- Creating a quiz starts it at `quizVersion` 1. Like other new content, it starts `visible` in a draft course and `hidden` otherwise, and it can't be created or edited under an archived module or lesson, or in an archived course (see <Link path="design/live-course-editing">Live course editing</Link>).
 
 ## Instructor experience
 
