@@ -16,6 +16,7 @@ import {
   initialVisibilityFields,
   isDraftCourse,
   MAX_TRANSACTION_ITEMS,
+  nextOrder,
   requireActiveCourse,
   requireCourseInstructor,
   requireCourseNotArchived,
@@ -539,11 +540,15 @@ export const restoreModule = courseProcedure
     // An archived course is read-only: restore the course first.
     await requireActiveCourse(coreTable, courseId);
 
-    // `order` was never touched by archiving, so the module returns to its
-    // original position.
+    // A restored module goes to the end of the course; the instructor drags
+    // it where they want. Every page: all siblings count.
+    const { data: modules } = await coreTable.entities.module.query
+      .primary({ courseId })
+      .go({ pages: 'all' });
     await writeInActiveCourse(coreTable, courseId, (entities) => [
       entities.module
         .patch({ courseId, moduleId })
+        .set({ order: nextOrder(modules) })
         .remove(['archivedAt'])
         .commit(),
     ]);

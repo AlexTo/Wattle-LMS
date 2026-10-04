@@ -15,6 +15,7 @@ import {
   initialVisibilityFields,
   isDraftCourse,
   MAX_TRANSACTION_ITEMS,
+  nextOrder,
   requireActiveCourse,
   requireAncestorsNotArchived,
   requireCourseInstructor,
@@ -517,15 +518,22 @@ export const restoreLesson = courseProcedure
     }
     requireNotArchived(module, 'Restore the module first');
 
-    // `order` was never touched by archiving, so the lesson returns to its
-    // original position.
+    // A restored lesson goes to the end of its module; the instructor drags it
+    // where they want. Every page: all siblings count.
+    const { data: lessons } = await coreTable.entities.lesson.query
+      .primary({ courseId, moduleId })
+      .go({ pages: 'all' });
     // Conditioned on the module still being active, so a module archived
     // after the check above doesn't end up with an active lesson under it.
     await writeUnderActiveAncestors(
       coreTable,
       { courseId, moduleId },
       (entities) => [
-        entities.lesson.patch(key).remove(['archivedAt']).commit(),
+        entities.lesson
+          .patch(key)
+          .set({ order: nextOrder(lessons) })
+          .remove(['archivedAt'])
+          .commit(),
       ],
     );
 
