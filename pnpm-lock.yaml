@@ -64,8 +64,8 @@ catalogs:
       specifier: 3.1126.0
       version: 3.1126.0
     '@aws/nx-plugin':
-      specifier: 1.0.4
-      version: 1.0.4
+      specifier: 1.0.5
+      version: 1.0.5
     '@aws/nx-plugin-mcp':
       specifier: ^1.0.0-rc.73
       version: 1.0.4
@@ -286,7 +286,7 @@ importers:
     dependencies:
       '@aws/nx-plugin':
         specifier: 'catalog:'
-        version: 1.0.4(@babel/core@7.29.7(supports-color@7.2.0))(@babel/traverse@7.29.8(supports-color@7.2.0))(@nx/eslint@23.2.1(@babel/traverse@7.29.8(supports-color@7.2.0))(@zkochan/js-yaml@0.0.7)(eslint@10.11.0(jiti@2.4.2)(supports-color@7.2.0))(nx@23.2.1)(supports-color@7.2.0))(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/coverage-v8@4.1.11)(@vitest/ui@4.1.11)(@zkochan/js-yaml@0.0.7)(debug@4.4.3(supports-color@7.2.0))(esbuild@0.28.2)(eslint@10.11.0(jiti@2.4.2)(supports-color@7.2.0))(express@5.2.1(supports-color@7.2.0))(jsdom@29.1.1)(nx@23.2.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(supports-color@7.2.0)(tsx@4.23.15)(yaml@2.9.1)
+        version: 1.0.5(@babel/core@7.29.7(supports-color@7.2.0))(@babel/traverse@7.29.8(supports-color@7.2.0))(@nx/eslint@23.2.1(@babel/traverse@7.29.8(supports-color@7.2.0))(@zkochan/js-yaml@0.0.7)(eslint@10.11.0(jiti@2.4.2)(supports-color@7.2.0))(nx@23.2.1)(supports-color@7.2.0))(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/coverage-v8@4.1.11)(@vitest/ui@4.1.11)(@zkochan/js-yaml@0.0.7)(debug@4.4.3(supports-color@7.2.0))(esbuild@0.28.2)(eslint@10.11.0(jiti@2.4.2)(supports-color@7.2.0))(express@5.2.1(supports-color@7.2.0))(jsdom@29.1.1)(nx@23.2.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(supports-color@7.2.0)(tsx@4.23.15)(yaml@2.9.1)
     devDependencies:
       '@aws/nx-plugin-mcp':
         specifier: 'catalog:'
@@ -1381,8 +1381,8 @@ packages:
     resolution: {integrity: sha512-hPU3y7sjNWHGZpDv7SrDjUGRoexNsdZBHQh4bnfx1ODqz4U1mJUYAQEd4S2ubClAmShEXEnxLS0G/ngZyZxgOQ==}
     hasBin: true
 
-  '@aws/nx-plugin@1.0.4':
-    resolution: {integrity: sha512-WBiYtwxLhGPWsKf5I9U+/xiqBfLWVQcOw9L/gb8hwarxvY2KGcQceV8m7PesdBgIXeja66ZcDMEJZCH/Qk0BQg==}
+  '@aws/nx-plugin@1.0.5':
+    resolution: {integrity: sha512-pHNM071st/3Cg+1xicNVL5aj7ZVy5by2qBPso3bDuNuwFZungVJNm8F1EHYHhg5vsS5EPlKypWs5MzS0K36Ugw==}
     engines: {node: '>=20.19.0'}
     peerDependencies:
       nx: 23.2.1
@@ -9662,7 +9662,7 @@ snapshots:
 
   '@aws/nx-plugin-mcp@1.0.4': {}
 
-  '@aws/nx-plugin@1.0.4(@babel/core@7.29.7(supports-color@7.2.0))(@babel/traverse@7.29.8(supports-color@7.2.0))(@nx/eslint@23.2.1(@babel/traverse@7.29.8(supports-color@7.2.0))(@zkochan/js-yaml@0.0.7)(eslint@10.11.0(jiti@2.4.2)(supports-color@7.2.0))(nx@23.2.1)(supports-color@7.2.0))(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/coverage-v8@4.1.11)(@vitest/ui@4.1.11)(@zkochan/js-yaml@0.0.7)(debug@4.4.3(supports-color@7.2.0))(esbuild@0.28.2)(eslint@10.11.0(jiti@2.4.2)(supports-color@7.2.0))(express@5.2.1(supports-color@7.2.0))(jsdom@29.1.1)(nx@23.2.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(supports-color@7.2.0)(tsx@4.23.15)(yaml@2.9.1)':
+  '@aws/nx-plugin@1.0.5(@babel/core@7.29.7(supports-color@7.2.0))(@babel/traverse@7.29.8(supports-color@7.2.0))(@nx/eslint@23.2.1(@babel/traverse@7.29.8(supports-color@7.2.0))(@zkochan/js-yaml@0.0.7)(eslint@10.11.0(jiti@2.4.2)(supports-color@7.2.0))(nx@23.2.1)(supports-color@7.2.0))(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/coverage-v8@4.1.11)(@vitest/ui@4.1.11)(@zkochan/js-yaml@0.0.7)(debug@4.4.3(supports-color@7.2.0))(esbuild@0.28.2)(eslint@10.11.0(jiti@2.4.2)(supports-color@7.2.0))(express@5.2.1(supports-color@7.2.0))(jsdom@29.1.1)(nx@23.2.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(supports-color@7.2.0)(tsx@4.23.15)(yaml@2.9.1)':
     dependencies:
       '@apidevtools/swagger-parser': 12.1.0(openapi-types@12.1.3)
       '@astral-sh/ruff-wasm-nodejs': 0.16.9
