@@ -30,6 +30,7 @@ import {
 } from '../../../../components/course-status';
 import { Spinner } from '../../../../components/spinner';
 import { useInstructorApi } from '../../../../hooks/useInstructorApi';
+import { CourseStatusActions } from './-components/course-status-actions';
 import { CreateLessonDialog } from './-components/create-lesson-dialog';
 import { CreateModuleDialog } from './-components/create-module-dialog';
 import { DeleteLessonDialog } from './-components/delete-lesson-dialog';
@@ -123,16 +124,23 @@ function RouteComponent() {
     <main className="mx-auto w-full max-w-5xl space-y-6 pb-10">
       <section>
         <div className="rounded-xl border bg-card p-5 shadow-sm sm:p-6">
-          <div className="min-w-0">
-            <Badge className={courseStatusStyles[status]}>{status}</Badge>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
-              {course.title}
-            </h1>
-            {course.description && (
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-                {course.description}
-              </p>
-            )}
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <Badge className={courseStatusStyles[status]}>{status}</Badge>
+              <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
+                {course.title}
+              </h1>
+              {course.description && (
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+                  {course.description}
+                </p>
+              )}
+            </div>
+            <CourseStatusActions
+              courseId={course.courseId}
+              title={course.title}
+              status={course.status}
+            />
           </div>
           <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t pt-4 text-sm text-muted-foreground">
             <span className="flex items-center gap-2">

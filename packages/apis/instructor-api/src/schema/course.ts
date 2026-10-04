@@ -21,6 +21,7 @@ export const CourseSchema = z.object({
   title: z.string(),
   description: z.string().optional(),
   status: CourseStatusSchema,
+  publishedAt: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -40,6 +41,26 @@ export type IArchiveCourseInput = z.output<typeof ArchiveCourseInputSchema>;
 export const ArchiveCourseOutputSchema = CourseSchema;
 
 export type IArchiveCourseOutput = z.output<typeof ArchiveCourseOutputSchema>;
+
+export const PublishCourseInputSchema = z.object({
+  courseId: z.string(),
+});
+
+export type IPublishCourseInput = z.output<typeof PublishCourseInputSchema>;
+
+export const PublishCourseOutputSchema = CourseSchema;
+
+export type IPublishCourseOutput = z.output<typeof PublishCourseOutputSchema>;
+
+export const RestoreCourseInputSchema = z.object({
+  courseId: z.string(),
+});
+
+export type IRestoreCourseInput = z.output<typeof RestoreCourseInputSchema>;
+
+export const RestoreCourseOutputSchema = CourseSchema;
+
+export type IRestoreCourseOutput = z.output<typeof RestoreCourseOutputSchema>;
 
 export const ViewCourseInputSchema = z.object({
   courseId: z.string(),

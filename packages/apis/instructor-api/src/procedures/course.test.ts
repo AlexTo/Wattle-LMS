@@ -5,13 +5,21 @@
 import type { APIGatewayProxyEvent } from 'aws-lambda';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../init.js';
-import { archiveCourse, createCourse, viewCourse } from './course.js';
+import {
+  archiveCourse,
+  createCourse,
+  publishCourse,
+  restoreCourse,
+  viewCourse,
+} from './course.js';
 
 const {
   courseCreate,
   courseGet,
   coursePatch,
   coursePatchSet,
+  coursePatchWhere,
+  coursePatchGo,
   courseInstructorCreate,
   courseInstructorGet,
   courseInstructorQueryPrimary,
@@ -25,6 +33,8 @@ const {
   courseGet: vi.fn(),
   coursePatch: vi.fn(),
   coursePatchSet: vi.fn(),
+  coursePatchWhere: vi.fn(),
+  coursePatchGo: vi.fn(),
   courseInstructorCreate: vi.fn(),
   courseInstructorGet: vi.fn(),
   courseInstructorQueryPrimary: vi.fn(),
@@ -61,7 +71,13 @@ vi.mock('@discava/core-table', () => ({
   })),
 }));
 
-const router = t.router({ createCourse, archiveCourse, viewCourse });
+const router = t.router({
+  createCourse,
+  archiveCourse,
+  publishCourse,
+  restoreCourse,
+  viewCourse,
+});
 const caller = t.createCallerFactory(router);
 
 const INSTRUCTOR_SUB = 'instructor-1';
@@ -106,8 +122,17 @@ beforeEach(() => {
   });
 
   coursePatch.mockReturnValue({ set: coursePatchSet });
+  // The result of whichever patch a test runs; archive's default.
+  coursePatchGo.mockResolvedValue({ data: { ...course, status: 'archived' } });
   coursePatchSet.mockReturnValue({
-    go: vi.fn().mockResolvedValue({ data: { ...course, status: 'archived' } }),
+    go: coursePatchGo,
+    where: coursePatchWhere,
+  });
+  coursePatchWhere.mockReturnValue({ go: coursePatchGo });
+  curriculumCollection.mockReturnValue({
+    go: vi.fn().mockResolvedValue({
+      data: { course: [course], module: [], lesson: [], contentItem: [{}] },
+    }),
   });
   courseInstructorGet.mockReturnValue({
     go: vi.fn().mockResolvedValue({
@@ -250,6 +275,298 @@ describe('archiveCourse', () => {
       courseUpdatedAt: course.updatedAt,
     });
     expect(courseInstructorPatchSet).toHaveBeenCalledTimes(2);
+  });
+});
+
+const conditionalCheckFailed = () =>
+  Object.assign(new Error('ElectroDB error'), {
+    cause: Object.assign(new Error('The conditional request failed'), {
+      name: 'ConditionalCheckFailedException',
+    }),
+  });
+
+const givenCourse = (data: Record<string, unknown>) =>
+  courseGet.mockReturnValue({
+    go: vi.fn().mockResolvedValue({ data: { ...course, ...data } }),
+  });
+
+// Runs the `where` callback the way ElectroDB would, returning the condition.
+const conditionOf = () => {
+  const condition = coursePatchWhere.mock.calls[0][0] as (
+    attr: Record<string, string>,
+    op: Record<string, (...args: string[]) => string>,
+  ) => string;
+  return condition(
+    { status: 'status' },
+    { eq: (attribute, value) => `${attribute} = ${value}` },
+  );
+};
+
+describe('publishCourse', () => {
+  const input = { courseId: course.courseId };
+
+  it('rejects callers who are not in the instructor group before checking course membership', async () => {
+    await expect(
+      callAs(['student']).publishCourse(input),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(courseInstructorGet).not.toHaveBeenCalled();
+  });
+
+  it('throws FORBIDDEN when the caller does not teach the course', async () => {
+    courseInstructorGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({ data: undefined }),
+    });
+
+    await expect(callAs().publishCourse(input)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    expect(coursePatch).not.toHaveBeenCalled();
+  });
+
+  it('throws NOT_FOUND when the course does not exist', async () => {
+    courseGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({ data: undefined }),
+    });
+
+    await expect(callAs().publishCourse(input)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('publishes a draft course that has content, recording when', async () => {
+    coursePatchGo.mockResolvedValue({
+      data: {
+        ...course,
+        status: 'published',
+        publishedAt: '2024-02-01T00:00:00.000Z',
+      },
+    });
+
+    const result = await callAs().publishCourse(input);
+
+    expect(coursePatchSet).toHaveBeenCalledWith({
+      status: 'published',
+      publishedAt: expect.any(String),
+    });
+    // Only a draft may be published, even if the course changes between the
+    // read and the write.
+    expect(conditionOf()).toBe('status = draft');
+    expect(result).toMatchObject({ status: 'published' });
+  });
+
+  it('refuses to publish a course with no content items, without writing', async () => {
+    curriculumCollection.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: { course: [course], module: [{}], lesson: [{}], contentItem: [] },
+      }),
+    });
+
+    await expect(callAs().publishCourse(input)).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+    });
+    expect(coursePatch).not.toHaveBeenCalled();
+  });
+
+  it('reads every page of the curriculum when counting content', async () => {
+    await callAs().publishCourse(input);
+
+    expect(curriculumCollection.mock.results[0].value.go).toHaveBeenCalledWith({
+      pages: 'all',
+    });
+  });
+
+  it('refuses to publish an archived course and says to restore it', async () => {
+    givenCourse({ status: 'archived' });
+
+    await expect(callAs().publishCourse(input)).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the course before publishing it',
+    });
+    expect(coursePatch).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when the course is already published', async () => {
+    givenCourse({
+      status: 'published',
+      publishedAt: '2024-02-01T00:00:00.000Z',
+    });
+
+    const result = await callAs().publishCourse(input);
+
+    expect(result).toMatchObject({ status: 'published' });
+    expect(coursePatch).not.toHaveBeenCalled();
+    expect(courseInstructorPatch).not.toHaveBeenCalled();
+  });
+
+  it('succeeds when another request published it between the read and the write', async () => {
+    coursePatchGo.mockRejectedValue(conditionalCheckFailed());
+    courseGet
+      .mockReturnValueOnce({ go: vi.fn().mockResolvedValue({ data: course }) })
+      .mockReturnValueOnce({
+        go: vi.fn().mockResolvedValue({
+          data: { ...course, status: 'published' },
+        }),
+      });
+
+    await expect(callAs().publishCourse(input)).resolves.toMatchObject({
+      status: 'published',
+    });
+  });
+
+  it('reports CONFLICT when the course changed some other way in between', async () => {
+    coursePatchGo.mockRejectedValue(conditionalCheckFailed());
+    courseGet
+      .mockReturnValueOnce({ go: vi.fn().mockResolvedValue({ data: course }) })
+      .mockReturnValueOnce({
+        go: vi.fn().mockResolvedValue({
+          data: { ...course, status: 'archived' },
+        }),
+      });
+
+    await expect(callAs().publishCourse(input)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+  });
+
+  it('does not swallow other write failures', async () => {
+    coursePatchGo.mockRejectedValue(new Error('DynamoDB is unavailable'));
+
+    await expect(callAs().publishCourse(input)).rejects.toThrow();
+  });
+
+  it('refreshes the denormalized courseUpdatedAt on every instructor', async () => {
+    coursePatchGo.mockResolvedValue({
+      data: {
+        ...course,
+        status: 'published',
+        updatedAt: '2024-03-01T00:00:00.000Z',
+      },
+    });
+    courseInstructorQueryPrimary.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: [
+          { courseId: course.courseId, instructorId: INSTRUCTOR_SUB },
+          { courseId: course.courseId, instructorId: 'co-instructor' },
+        ],
+      }),
+    });
+
+    await callAs().publishCourse(input);
+
+    expect(courseInstructorPatchSet).toHaveBeenCalledTimes(2);
+    expect(courseInstructorPatchSet).toHaveBeenCalledWith({
+      courseUpdatedAt: '2024-03-01T00:00:00.000Z',
+    });
+  });
+});
+
+describe('restoreCourse', () => {
+  const input = { courseId: course.courseId };
+
+  it('rejects callers who are not in the instructor group before checking course membership', async () => {
+    await expect(
+      callAs(['student']).restoreCourse(input),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(courseInstructorGet).not.toHaveBeenCalled();
+  });
+
+  it('throws FORBIDDEN when the caller does not teach the course', async () => {
+    courseInstructorGet.mockReturnValue({
+      go: vi.fn().mockResolvedValue({ data: undefined }),
+    });
+
+    await expect(callAs().restoreCourse(input)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    expect(coursePatch).not.toHaveBeenCalled();
+  });
+
+  it('restores a course that was published before it was archived to published', async () => {
+    givenCourse({
+      status: 'archived',
+      publishedAt: '2024-02-01T00:00:00.000Z',
+    });
+
+    await callAs().restoreCourse(input);
+
+    expect(coursePatchSet).toHaveBeenCalledWith({ status: 'published' });
+    expect(conditionOf()).toBe('status = archived');
+  });
+
+  // Invariant: a course that has been open to students never returns to
+  // draft, where deletes are permanent.
+  it('restores a course that was never published to draft', async () => {
+    givenCourse({ status: 'archived' });
+
+    await callAs().restoreCourse(input);
+
+    expect(coursePatchSet).toHaveBeenCalledWith({ status: 'draft' });
+  });
+
+  it.each(['draft', 'published'])(
+    'writes nothing when the course is %s',
+    async (status) => {
+      givenCourse({ status });
+
+      await expect(callAs().restoreCourse(input)).resolves.toMatchObject({
+        status,
+      });
+      expect(coursePatch).not.toHaveBeenCalled();
+    },
+  );
+
+  it('succeeds when another request restored it between the read and the write', async () => {
+    givenCourse({
+      status: 'archived',
+      publishedAt: '2024-02-01T00:00:00.000Z',
+    });
+    coursePatchGo.mockRejectedValue(conditionalCheckFailed());
+    courseGet
+      .mockReturnValueOnce({
+        go: vi.fn().mockResolvedValue({
+          data: { ...course, status: 'archived', publishedAt: 'x' },
+        }),
+      })
+      .mockReturnValueOnce({
+        go: vi.fn().mockResolvedValue({
+          data: { ...course, status: 'published', publishedAt: 'x' },
+        }),
+      });
+
+    await expect(callAs().restoreCourse(input)).resolves.toMatchObject({
+      status: 'published',
+    });
+  });
+
+  it('reports CONFLICT when the course is still archived but the write failed its condition', async () => {
+    givenCourse({ status: 'archived' });
+    coursePatchGo.mockRejectedValue(conditionalCheckFailed());
+
+    await expect(callAs().restoreCourse(input)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+  });
+
+  it('refreshes the denormalized courseUpdatedAt on every instructor', async () => {
+    givenCourse({ status: 'archived' });
+    coursePatchGo.mockResolvedValue({
+      data: {
+        ...course,
+        status: 'draft',
+        updatedAt: '2024-03-01T00:00:00.000Z',
+      },
+    });
+    courseInstructorQueryPrimary.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: [{ courseId: course.courseId, instructorId: INSTRUCTOR_SUB }],
+      }),
+    });
+
+    await callAs().restoreCourse(input);
+
+    expect(courseInstructorPatchSet).toHaveBeenCalledWith({
+      courseUpdatedAt: '2024-03-01T00:00:00.000Z',
+    });
   });
 });
 

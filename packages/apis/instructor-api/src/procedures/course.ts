@@ -5,16 +5,48 @@
 import { TRPCError } from '@trpc/server';
 import { v7 as uuidv7 } from 'uuid';
 import { courseProcedure } from '../init.js';
-import { requireCourseInstructor } from '../lib/course-lifecycle.js';
+import {
+  getCourseOrThrow,
+  isConditionalCheckFailed,
+  requireCourseInstructor,
+} from '../lib/course-lifecycle.js';
+import type { ICoreTableContext } from '../middleware/core-table.js';
 import {
   ArchiveCourseInputSchema,
   ArchiveCourseOutputSchema,
   CreateCourseInputSchema,
   CreateCourseOutputSchema,
   type IViewCourseOutput,
+  PublishCourseInputSchema,
+  PublishCourseOutputSchema,
+  RestoreCourseInputSchema,
+  RestoreCourseOutputSchema,
   ViewCourseInputSchema,
   ViewCourseOutputSchema,
 } from '../schema/index.js';
+
+type CoreTable = NonNullable<ICoreTableContext['coreTable']>;
+
+// byInstructor's sort key is courseUpdatedAt#courseId, so every course
+// update has to refresh that denormalized timestamp on every
+// CourseInstructor row for the course, not just the caller's own.
+const refreshInstructorCourseUpdatedAt = async (
+  coreTable: CoreTable,
+  courseId: string,
+  courseUpdatedAt: string,
+) => {
+  const { data: instructors } = await coreTable.entities.courseInstructor.query
+    .primary({ courseId })
+    .go();
+  await Promise.all(
+    instructors.map(({ instructorId }) =>
+      coreTable.entities.courseInstructor
+        .patch({ courseId, instructorId })
+        .set({ courseUpdatedAt })
+        .go(),
+    ),
+  );
+};
 
 export const createCourse = courseProcedure
   .input(CreateCourseInputSchema)
@@ -84,23 +116,124 @@ export const archiveCourse = courseProcedure
       .set({ status: 'archived' })
       .go({ response: 'all_new' });
 
-    // byInstructor's sort key is courseUpdatedAt#courseId, so every course
-    // update has to refresh that denormalized timestamp on every
-    // CourseInstructor row for this course, not just the caller's own.
-    const { data: instructors } =
-      await coreTable.entities.courseInstructor.query
-        .primary({ courseId })
-        .go();
-    await Promise.all(
-      instructors.map(({ instructorId }) =>
-        coreTable.entities.courseInstructor
-          .patch({ courseId, instructorId })
-          .set({ courseUpdatedAt: course.updatedAt })
-          .go(),
-      ),
+    await refreshInstructorCourseUpdatedAt(
+      coreTable,
+      courseId,
+      course.updatedAt,
     );
 
     return course;
+  });
+
+const courseChanged = () =>
+  new TRPCError({
+    code: 'CONFLICT',
+    message: 'The course was modified by another request; please retry',
+  });
+
+// A draft course becomes visible to students: published. Only a draft can
+// be published, and only once it has content, so a course isn't opened up
+// empty. Repeating it on a published course writes nothing.
+export const publishCourse = courseProcedure
+  .input(PublishCourseInputSchema)
+  .output(PublishCourseOutputSchema)
+  .mutation(async ({ ctx, input }) => {
+    const coreTable = ctx.coreTable!;
+    const { courseId } = input;
+
+    await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
+
+    const course = await getCourseOrThrow(coreTable, courseId);
+    if (course.status === 'published') {
+      return course;
+    }
+    if (course.status === 'archived') {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'Restore the course before publishing it',
+      });
+    }
+
+    // A draft course has no hidden or archived records, so every content item
+    // in it is one students would see. Every page: a curriculum can exceed
+    // a single 1 MB query page.
+    const {
+      data: { contentItem: contentItems },
+    } = await coreTable.collections
+      .curriculum({ courseId })
+      .go({ pages: 'all' });
+    if (contentItems.length === 0) {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'Add at least one content item before publishing the course',
+      });
+    }
+
+    try {
+      const { data: published } = await coreTable.entities.course
+        .patch({ courseId })
+        .set({ status: 'published', publishedAt: new Date().toISOString() })
+        .where((attr, op) => op.eq(attr.status, 'draft'))
+        .go({ response: 'all_new' });
+      await refreshInstructorCourseUpdatedAt(
+        coreTable,
+        courseId,
+        published.updatedAt,
+      );
+      return published;
+    } catch (error) {
+      if (!isConditionalCheckFailed(error)) {
+        throw error;
+      }
+      // Another request moved the course on between the read and the write.
+      const current = await getCourseOrThrow(coreTable, courseId);
+      if (current.status === 'published') {
+        return current;
+      }
+      throw courseChanged();
+    }
+  });
+
+// Brings an archived course back: to published if it has ever been
+// published, otherwise to draft. A course that has been open to students
+// never returns to draft, where deletes are permanent. Repeating it on a
+// course that isn't archived writes nothing.
+export const restoreCourse = courseProcedure
+  .input(RestoreCourseInputSchema)
+  .output(RestoreCourseOutputSchema)
+  .mutation(async ({ ctx, input }) => {
+    const coreTable = ctx.coreTable!;
+    const { courseId } = input;
+
+    await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
+
+    const course = await getCourseOrThrow(coreTable, courseId);
+    if (course.status !== 'archived') {
+      return course;
+    }
+
+    try {
+      const { data: restored } = await coreTable.entities.course
+        .patch({ courseId })
+        .set({ status: course.publishedAt ? 'published' : 'draft' })
+        .where((attr, op) => op.eq(attr.status, 'archived'))
+        .go({ response: 'all_new' });
+      await refreshInstructorCourseUpdatedAt(
+        coreTable,
+        courseId,
+        restored.updatedAt,
+      );
+      return restored;
+    } catch (error) {
+      if (!isConditionalCheckFailed(error)) {
+        throw error;
+      }
+      const current = await getCourseOrThrow(coreTable, courseId);
+      if (current.status !== 'archived') {
+        return current;
+      }
+      throw courseChanged();
+    }
   });
 
 // The course editor's view: the whole curriculum, including hidden and

@@ -28,6 +28,8 @@ import {
 import {
   archiveCourse,
   createCourse,
+  publishCourse,
+  restoreCourse,
   viewCourse,
 } from './procedures/course.js';
 import {
@@ -55,6 +57,8 @@ export const appRouter = router({
   course: router({
     create: createCourse,
     archive: archiveCourse,
+    publish: publishCourse,
+    restore: restoreCourse,
     view: viewCourse,
   }),
   module: router({
