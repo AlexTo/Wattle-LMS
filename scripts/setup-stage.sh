@@ -29,7 +29,7 @@ set -euo pipefail
 # - optionally configures custom domains and their ACM certificates for the
 #   APIs, portals and lesson media, plus (when lesson media has a domain) the
 #   shared parent domain HLS playback's signed cookies need, stored as
-#   <STAGE>_<COMPONENT>_* variables on that GitHub environment (see
+#   <STAGE>_INFRA_<COMPONENT>_* variables on that GitHub environment (see
 #   packages/common/infra-config/src/env-overrides.ts), which the deploy
 #   workflow forwards to synth
 #
@@ -56,9 +56,9 @@ set -euo pipefail
 #   AWS_PROFILE          AWS CLI profile (otherwise the stage's configured
 #                        profile, then the default credential chain)
 #   AWS_REGION           used when the stage config sets no region
-#   <STAGE>_<COMPONENT>_DOMAIN_NAME(S), <STAGE>_<COMPONENT>_CERTIFICATE_ARN
+#   <STAGE>_INFRA_<COMPONENT>_DOMAIN_NAME(S), <STAGE>_INFRA_<COMPONENT>_CERTIFICATE_ARN
 #                        custom domain defaults, e.g.
-#                        DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME (otherwise
+#                        DISCAVA_DEVELOPMENT_INFRA_CORE_API_DOMAIN_NAME (otherwise
 #                        the stage's config, then the GitHub environment's
 #                        current variables)
 #   <STAGE>_ROOT_DOMAIN  root domain each component's domain defaults to a
@@ -66,7 +66,7 @@ set -euo pipefail
 #                        example.com suggests core-api.example.com (only used
 #                        where neither the stage's config nor the GitHub
 #                        environment sets that component's domain)
-#   <STAGE>_LESSON_MEDIA_COOKIE_DOMAIN
+#   <STAGE>_INFRA_LESSON_MEDIA_COOKIE_DOMAIN
 #                        shared cookie domain default for HLS playback (same
 #                        fallback order as above)
 #   DEPLOY_ROLE_NAME, EXECUTION_ROLE_NAME, DOCKER_LOGIN_ROLE_NAME
@@ -192,7 +192,7 @@ read_stages_config() {
         const [project, stage] = process.argv.slice(1);
         if (!stage) return console.log(m.listStageNames(project).join('\n'));
         const config = m.resolveStage(project, stage) ?? {};
-        const c = config.components ?? {};
+        const c = config.infra ?? {};
         // Component security settings default to on unless a stage relaxes them.
         const cloudFrontWaf = [c.studentPortal, c.instructorPortal, c.adminPortal, c.lessonMedia]
           .some((component) => component?.enableWaf !== false);
@@ -401,7 +401,7 @@ STAGE_PROFILE=""
 STAGE_CLOUDFRONT_WAF=""
 STAGE_COOKIE_DOMAIN=""
 # Keyed by component name, e.g. coreApi. Already include any
-# <STAGE>_<COMPONENT>_* overrides set in this shell (resolveStage applies them).
+# <STAGE>_INFRA_<COMPONENT>_* overrides set in this shell (resolveStage applies them).
 declare -A STAGE_DOMAINS=() STAGE_CERTIFICATES=()
 while IFS='=' read -r key value; do
   case "$key" in
@@ -538,6 +538,10 @@ fi
 section "Custom domains"
 STAGE_ENV_PREFIX="$(to_env_segment "$TARGET_STAGE")_"
 readonly STAGE_ENV_PREFIX
+# Component settings are under `infra` in the stage config, so their variables are
+# <STAGE>_INFRA_<COMPONENT>_<FIELD>.
+STAGE_INFRA_ENV_PREFIX="${STAGE_ENV_PREFIX}INFRA_"
+readonly STAGE_INFRA_ENV_PREFIX
 READ_GITHUB_VARIABLES=false
 if github_cli_ready; then
   READ_GITHUB_VARIABLES=true
@@ -572,18 +576,18 @@ for spec in \
   IFS='|' read -r component segment label kind root_labels <<<"$spec"
   if [[ "$kind" == api ]]; then
     # API Gateway custom domains take a single name.
-    domain_variable="$STAGE_ENV_PREFIX${segment}_DOMAIN_NAME"
+    domain_variable="$STAGE_INFRA_ENV_PREFIX${segment}_DOMAIN_NAME"
     domain_question="$label domain"
     certificate_region="$AWS_REGION"
     # Regional custom domains accept RSA public keys of at most 2048 bits.
     certificate_key_types="RSA_1024,RSA_2048,EC_prime256v1,EC_secp384r1"
   else
-    domain_variable="$STAGE_ENV_PREFIX${segment}_DOMAIN_NAMES"
+    domain_variable="$STAGE_INFRA_ENV_PREFIX${segment}_DOMAIN_NAMES"
     domain_question="$label domains (comma-separated)"
     certificate_region="$GLOBAL_REGION"
     certificate_key_types="RSA_1024,RSA_2048,RSA_3072,RSA_4096,EC_prime256v1,EC_secp384r1"
   fi
-  certificate_variable="$STAGE_ENV_PREFIX${segment}_CERTIFICATE_ARN"
+  certificate_variable="$STAGE_INFRA_ENV_PREFIX${segment}_CERTIFICATE_ARN"
 
   current_domains=""
   current_certificate=""
@@ -673,7 +677,7 @@ done
 # (which serves the video) -- only meaningful once Lesson media itself has a
 # custom domain configured above.
 if [[ -n "${RESOLVED_DOMAINS[lessonMedia]:-}" ]]; then
-  cookie_domain_variable="${STAGE_ENV_PREFIX}LESSON_MEDIA_COOKIE_DOMAIN"
+  cookie_domain_variable="${STAGE_INFRA_ENV_PREFIX}LESSON_MEDIA_COOKIE_DOMAIN"
   current_cookie_domain=""
   if [[ "$READ_GITHUB_VARIABLES" == true ]]; then
     current_cookie_domain="$(github_environment_variable "$cookie_domain_variable")"

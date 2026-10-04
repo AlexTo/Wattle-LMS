@@ -11,16 +11,16 @@ const STAGE = 'discava-test-stage';
 const ENV_KEYS = [
   'DISCAVA_TEST_STAGE_REGION',
   'DISCAVA_TEST_STAGE_ACCOUNT',
-  'DISCAVA_TEST_STAGE_STUDENT_PORTAL_ENABLE_WAF',
-  'DISCAVA_TEST_STAGE_STUDENT_PORTAL_DOMAIN_NAMES',
-  'DISCAVA_TEST_STAGE_STUDENT_PORTAL_CERTIFICATE_ARN',
-  'DISCAVA_TEST_STAGE_CORE_API_ENABLE_WAF',
-  'DISCAVA_TEST_STAGE_CORE_API_DOMAIN_NAME',
-  'DISCAVA_TEST_STAGE_CORE_API_CERTIFICATE_ARN',
-  'DISCAVA_TEST_STAGE_INSTRUCTOR_PORTAL_DOMAIN_NAMES',
-  'DISCAVA_TEST_STAGE_ADMIN_PORTAL_CERTIFICATE_ARN',
-  'DISCAVA_TEST_STAGE_LESSON_MEDIA_DOMAIN_NAMES',
-  'DISCAVA_TEST_STAGE_UNKNOWN_FIELD',
+  'DISCAVA_TEST_STAGE_INFRA_STUDENT_PORTAL_ENABLE_WAF',
+  'DISCAVA_TEST_STAGE_INFRA_STUDENT_PORTAL_DOMAIN_NAMES',
+  'DISCAVA_TEST_STAGE_INFRA_STUDENT_PORTAL_CERTIFICATE_ARN',
+  'DISCAVA_TEST_STAGE_INFRA_CORE_API_ENABLE_WAF',
+  'DISCAVA_TEST_STAGE_INFRA_CORE_API_DOMAIN_NAME',
+  'DISCAVA_TEST_STAGE_INFRA_CORE_API_CERTIFICATE_ARN',
+  'DISCAVA_TEST_STAGE_INFRA_INSTRUCTOR_PORTAL_DOMAIN_NAMES',
+  'DISCAVA_TEST_STAGE_INFRA_ADMIN_PORTAL_CERTIFICATE_ARN',
+  'DISCAVA_TEST_STAGE_INFRA_LESSON_MEDIA_DOMAIN_NAMES',
+  'DISCAVA_TEST_STAGE_INFRA_UNKNOWN_FIELD',
 ];
 
 afterEach(() => {
@@ -31,44 +31,44 @@ describe('applyEnvOverrides', () => {
   it('returns base config unchanged when no override env vars are set', () => {
     const base: StageConfig = {
       region: 'ap-southeast-2',
-      components: { studentPortal: { enableWaf: true } },
+      infra: { studentPortal: { enableWaf: true } },
     };
 
     expect(applyEnvOverrides(STAGE, base)).toEqual(base);
   });
 
   it('ignores unrelated env vars', () => {
-    process.env.DISCAVA_TEST_STAGE_UNKNOWN_FIELD = 'true';
+    process.env.DISCAVA_TEST_STAGE_INFRA_UNKNOWN_FIELD = 'true';
     const base: StageConfig = {};
 
     expect(applyEnvOverrides(STAGE, base)).toEqual({});
   });
 
   it('overrides a boolean component field, taking priority over the base value', () => {
-    process.env.DISCAVA_TEST_STAGE_STUDENT_PORTAL_ENABLE_WAF = 'false';
+    process.env.DISCAVA_TEST_STAGE_INFRA_STUDENT_PORTAL_ENABLE_WAF = 'false';
     const base: StageConfig = {
-      components: { studentPortal: { enableWaf: true } },
+      infra: { studentPortal: { enableWaf: true } },
     };
 
     expect(applyEnvOverrides(STAGE, base)).toEqual({
-      components: { studentPortal: { enableWaf: false } },
+      infra: { studentPortal: { enableWaf: false } },
     });
   });
 
   it('throws a clear error for an invalid boolean value', () => {
-    process.env.DISCAVA_TEST_STAGE_CORE_API_ENABLE_WAF = 'nope';
+    process.env.DISCAVA_TEST_STAGE_INFRA_CORE_API_ENABLE_WAF = 'nope';
 
     expect(() => applyEnvOverrides(STAGE, {})).toThrow(
-      /DISCAVA_TEST_STAGE_CORE_API_ENABLE_WAF/,
+      /DISCAVA_TEST_STAGE_INFRA_CORE_API_ENABLE_WAF/,
     );
   });
 
   it('overrides a string[] field as a comma-separated, trimmed list', () => {
-    process.env.DISCAVA_TEST_STAGE_STUDENT_PORTAL_DOMAIN_NAMES =
+    process.env.DISCAVA_TEST_STAGE_INFRA_STUDENT_PORTAL_DOMAIN_NAMES =
       'learn.example.com, www.learn.example.com ,,';
 
     expect(applyEnvOverrides(STAGE, {})).toEqual({
-      components: {
+      infra: {
         studentPortal: {
           domainNames: ['learn.example.com', 'www.learn.example.com'],
         },
@@ -78,10 +78,10 @@ describe('applyEnvOverrides', () => {
 
   it('overrides a string field', () => {
     const arn = 'arn:aws:acm:us-east-1:123456789012:certificate/abc-123';
-    process.env.DISCAVA_TEST_STAGE_STUDENT_PORTAL_CERTIFICATE_ARN = arn;
+    process.env.DISCAVA_TEST_STAGE_INFRA_STUDENT_PORTAL_CERTIFICATE_ARN = arn;
 
     expect(applyEnvOverrides(STAGE, {})).toEqual({
-      components: { studentPortal: { certificateArn: arn } },
+      infra: { studentPortal: { certificateArn: arn } },
     });
   });
 
@@ -96,18 +96,18 @@ describe('applyEnvOverrides', () => {
   });
 
   it('merges multiple field overrides for the same component alongside unrelated base fields', () => {
-    process.env.DISCAVA_TEST_STAGE_STUDENT_PORTAL_ENABLE_WAF = 'false';
-    process.env.DISCAVA_TEST_STAGE_STUDENT_PORTAL_CERTIFICATE_ARN =
+    process.env.DISCAVA_TEST_STAGE_INFRA_STUDENT_PORTAL_ENABLE_WAF = 'false';
+    process.env.DISCAVA_TEST_STAGE_INFRA_STUDENT_PORTAL_CERTIFICATE_ARN =
       'arn:aws:acm:us-east-1:123456789012:certificate/abc';
     const base: StageConfig = {
-      components: {
+      infra: {
         studentPortal: { enableWaf: true, enableKmsEncryption: true },
         coreApi: { enableWaf: true },
       },
     };
 
     expect(applyEnvOverrides(STAGE, base)).toEqual({
-      components: {
+      infra: {
         studentPortal: {
           enableWaf: false,
           enableKmsEncryption: true,
@@ -119,12 +119,13 @@ describe('applyEnvOverrides', () => {
   });
 
   it('overrides the singular domainName/certificateArn fields on an API component', () => {
-    process.env.DISCAVA_TEST_STAGE_CORE_API_DOMAIN_NAME = 'api.example.com';
-    process.env.DISCAVA_TEST_STAGE_CORE_API_CERTIFICATE_ARN =
+    process.env.DISCAVA_TEST_STAGE_INFRA_CORE_API_DOMAIN_NAME =
+      'api.example.com';
+    process.env.DISCAVA_TEST_STAGE_INFRA_CORE_API_CERTIFICATE_ARN =
       'arn:aws:acm:ap-southeast-2:123456789012:certificate/abc';
 
     expect(applyEnvOverrides(STAGE, {})).toEqual({
-      components: {
+      infra: {
         coreApi: {
           domainName: 'api.example.com',
           certificateArn:
@@ -135,15 +136,15 @@ describe('applyEnvOverrides', () => {
   });
 
   it('overrides domain/certificate fields on the instructor/admin portals and lesson media bucket', () => {
-    process.env.DISCAVA_TEST_STAGE_INSTRUCTOR_PORTAL_DOMAIN_NAMES =
+    process.env.DISCAVA_TEST_STAGE_INFRA_INSTRUCTOR_PORTAL_DOMAIN_NAMES =
       'instruct.example.com';
-    process.env.DISCAVA_TEST_STAGE_ADMIN_PORTAL_CERTIFICATE_ARN =
+    process.env.DISCAVA_TEST_STAGE_INFRA_ADMIN_PORTAL_CERTIFICATE_ARN =
       'arn:aws:acm:us-east-1:123456789012:certificate/def';
-    process.env.DISCAVA_TEST_STAGE_LESSON_MEDIA_DOMAIN_NAMES =
+    process.env.DISCAVA_TEST_STAGE_INFRA_LESSON_MEDIA_DOMAIN_NAMES =
       'media.example.com';
 
     expect(applyEnvOverrides(STAGE, {})).toEqual({
-      components: {
+      infra: {
         instructorPortal: { domainNames: ['instruct.example.com'] },
         adminPortal: {
           certificateArn: 'arn:aws:acm:us-east-1:123456789012:certificate/def',

@@ -364,23 +364,23 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
 
   it('stores a domain with the issued certificate found for it', () => {
     const { status, ghVariableCalls } = runSetup(GH_READY, {
-      DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME: 'api.example.com',
+      DISCAVA_DEVELOPMENT_INFRA_CORE_API_DOMAIN_NAME: 'api.example.com',
       ACM_CERTIFICATES: `${REGIONAL_CERTIFICATE_ARN}\\t*.example.com,example.com`,
       ACM_DESCRIBE: 'ISSUED\\tRSA-2048\\t*.example.com,example.com',
     });
 
     expect(status).toBe(0);
     expect(ghVariableCalls).toContain(
-      `gh variable set DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME --repo ${REPOSITORY} --env discava-development --body api.example.com`,
+      `gh variable set DISCAVA_DEVELOPMENT_INFRA_CORE_API_DOMAIN_NAME --repo ${REPOSITORY} --env discava-development --body api.example.com`,
     );
     expect(ghVariableCalls).toContain(
-      `gh variable set DISCAVA_DEVELOPMENT_CORE_API_CERTIFICATE_ARN --repo ${REPOSITORY} --env discava-development --body ${REGIONAL_CERTIFICATE_ARN}`,
+      `gh variable set DISCAVA_DEVELOPMENT_INFRA_CORE_API_CERTIFICATE_ARN --repo ${REPOSITORY} --env discava-development --body ${REGIONAL_CERTIFICATE_ARN}`,
     );
   });
 
   it('finds ECDSA certificates, which ACM only lists when asked for', () => {
     const { status, ghVariableCalls } = runSetup(GH_READY, {
-      DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME: 'api.example.com',
+      DISCAVA_DEVELOPMENT_INFRA_CORE_API_DOMAIN_NAME: 'api.example.com',
       ACM_CERTIFICATES: `${REGIONAL_CERTIFICATE_ARN}\\t*.example.com`,
       ACM_KEY_TYPE: 'EC_prime256v1',
       ACM_DESCRIBE: 'ISSUED\\tEC-prime256v1\\t*.example.com',
@@ -388,14 +388,15 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
 
     expect(status).toBe(0);
     expect(ghVariableCalls).toContain(
-      `gh variable set DISCAVA_DEVELOPMENT_CORE_API_CERTIFICATE_ARN --repo ${REPOSITORY} --env discava-development --body ${REGIONAL_CERTIFICATE_ARN}`,
+      `gh variable set DISCAVA_DEVELOPMENT_INFRA_CORE_API_CERTIFICATE_ARN --repo ${REPOSITORY} --env discava-development --body ${REGIONAL_CERTIFICATE_ARN}`,
     );
   });
 
   it('rejects an RSA key over 2048 bits for an API', () => {
     const { status, output, iamCalls } = runSetup(GH_READY, {
-      DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME: 'api.example.com',
-      DISCAVA_DEVELOPMENT_CORE_API_CERTIFICATE_ARN: REGIONAL_CERTIFICATE_ARN,
+      DISCAVA_DEVELOPMENT_INFRA_CORE_API_DOMAIN_NAME: 'api.example.com',
+      DISCAVA_DEVELOPMENT_INFRA_CORE_API_CERTIFICATE_ARN:
+        REGIONAL_CERTIFICATE_ARN,
       ACM_DESCRIBE: 'ISSUED\\tRSA-4096\\t*.example.com',
     });
 
@@ -406,7 +407,7 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
 
   it('stops before touching IAM when no issued certificate covers a domain', () => {
     const { status, output, iamCalls, ghVariableCalls } = runSetup(GH_READY, {
-      DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME: 'api.example.com',
+      DISCAVA_DEVELOPMENT_INFRA_CORE_API_DOMAIN_NAME: 'api.example.com',
       ACM_CERTIFICATES: `${REGIONAL_CERTIFICATE_ARN}\\tother.example.org`,
     });
 
@@ -418,22 +419,22 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
 
   it('stores comma-separated CloudFront domains', () => {
     const { status, ghVariableCalls } = runSetup(GH_READY, {
-      DISCAVA_DEVELOPMENT_STUDENT_PORTAL_DOMAIN_NAMES:
+      DISCAVA_DEVELOPMENT_INFRA_STUDENT_PORTAL_DOMAIN_NAMES:
         'example.com, www.example.com',
-      DISCAVA_DEVELOPMENT_STUDENT_PORTAL_CERTIFICATE_ARN: CERTIFICATE_ARN,
+      DISCAVA_DEVELOPMENT_INFRA_STUDENT_PORTAL_CERTIFICATE_ARN: CERTIFICATE_ARN,
       ACM_DESCRIBE: 'ISSUED\\tRSA-2048\\texample.com,*.example.com',
     });
 
     expect(status).toBe(0);
     expect(ghVariableCalls).toContain(
-      `gh variable set DISCAVA_DEVELOPMENT_STUDENT_PORTAL_DOMAIN_NAMES --repo ${REPOSITORY} --env discava-development --body example.com,www.example.com`,
+      `gh variable set DISCAVA_DEVELOPMENT_INFRA_STUDENT_PORTAL_DOMAIN_NAMES --repo ${REPOSITORY} --env discava-development --body example.com,www.example.com`,
     );
   });
 
   it('rejects a CloudFront certificate outside us-east-1 before touching IAM', () => {
     const { status, output, iamCalls } = runSetup(GH_READY, {
-      DISCAVA_DEVELOPMENT_LESSON_MEDIA_DOMAIN_NAMES: 'media.example.com',
-      DISCAVA_DEVELOPMENT_LESSON_MEDIA_CERTIFICATE_ARN:
+      DISCAVA_DEVELOPMENT_INFRA_LESSON_MEDIA_DOMAIN_NAMES: 'media.example.com',
+      DISCAVA_DEVELOPMENT_INFRA_LESSON_MEDIA_CERTIFICATE_ARN:
         REGIONAL_CERTIFICATE_ARN,
       ACM_DESCRIBE: 'ISSUED\\tRSA-2048\\t*.example.com',
     });
@@ -445,8 +446,9 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
 
   it("rejects a certificate that doesn't cover every domain", () => {
     const { status, output, iamCalls } = runSetup(GH_READY, {
-      DISCAVA_DEVELOPMENT_ADMIN_PORTAL_DOMAIN_NAMES: 'admin.lms.example.com',
-      DISCAVA_DEVELOPMENT_ADMIN_PORTAL_CERTIFICATE_ARN: CERTIFICATE_ARN,
+      DISCAVA_DEVELOPMENT_INFRA_ADMIN_PORTAL_DOMAIN_NAMES:
+        'admin.lms.example.com',
+      DISCAVA_DEVELOPMENT_INFRA_ADMIN_PORTAL_CERTIFICATE_ARN: CERTIFICATE_ARN,
       // A wildcard covers exactly one label.
       ACM_DESCRIBE: 'ISSUED\\tRSA-2048\\t*.example.com',
     });
@@ -466,7 +468,7 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
 
     expect(status).toBe(0);
     const set = (name: string, body: string) =>
-      `gh variable set DISCAVA_DEVELOPMENT_${name} --repo ${REPOSITORY} --env discava-development --body ${body}`;
+      `gh variable set DISCAVA_DEVELOPMENT_INFRA_${name} --repo ${REPOSITORY} --env discava-development --body ${body}`;
     expect(ghVariableCalls).toEqual(
       expect.arrayContaining([
         set('CORE_API_DOMAIN_NAME', 'core-api.example.com'),
@@ -487,8 +489,8 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
   it('keeps domains the stage config or GitHub already sets over the root domain', () => {
     const { status, ghVariableCalls } = runSetup(GH_READY, {
       DISCAVA_DEVELOPMENT_ROOT_DOMAIN: 'example.com',
-      DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME: 'api.example.com',
-      GH_VARIABLE_DISCAVA_DEVELOPMENT_ADMIN_PORTAL_DOMAIN_NAMES:
+      DISCAVA_DEVELOPMENT_INFRA_CORE_API_DOMAIN_NAME: 'api.example.com',
+      GH_VARIABLE_DISCAVA_DEVELOPMENT_INFRA_ADMIN_PORTAL_DOMAIN_NAMES:
         'backoffice.example.com',
       ACM_CERTIFICATES_ap_southeast_2: `${REGIONAL_CERTIFICATE_ARN}\\t*.example.com,example.com`,
       ACM_CERTIFICATES_us_east_1: `${CERTIFICATE_ARN}\\t*.example.com,example.com`,
@@ -500,13 +502,13 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
       call.includes('_DOMAIN_NAME'),
     );
     expect(domainCalls).toContain(
-      `gh variable set DISCAVA_DEVELOPMENT_CORE_API_DOMAIN_NAME --repo ${REPOSITORY} --env discava-development --body api.example.com`,
+      `gh variable set DISCAVA_DEVELOPMENT_INFRA_CORE_API_DOMAIN_NAME --repo ${REPOSITORY} --env discava-development --body api.example.com`,
     );
     expect(domainCalls).toContain(
-      `gh variable set DISCAVA_DEVELOPMENT_ADMIN_PORTAL_DOMAIN_NAMES --repo ${REPOSITORY} --env discava-development --body backoffice.example.com`,
+      `gh variable set DISCAVA_DEVELOPMENT_INFRA_ADMIN_PORTAL_DOMAIN_NAMES --repo ${REPOSITORY} --env discava-development --body backoffice.example.com`,
     );
     expect(domainCalls).toContain(
-      `gh variable set DISCAVA_DEVELOPMENT_INSTRUCTOR_PORTAL_DOMAIN_NAMES --repo ${REPOSITORY} --env discava-development --body instructor.example.com`,
+      `gh variable set DISCAVA_DEVELOPMENT_INFRA_INSTRUCTOR_PORTAL_DOMAIN_NAMES --repo ${REPOSITORY} --env discava-development --body instructor.example.com`,
     );
   });
 
@@ -522,7 +524,7 @@ describe('setup-stage.sh custom domains', { timeout: 60_000 }, () => {
 
   it('rejects more than one domain for an API', () => {
     const { status, output } = runSetup(GH_READY, {
-      DISCAVA_DEVELOPMENT_INSTRUCTOR_API_DOMAIN_NAME:
+      DISCAVA_DEVELOPMENT_INFRA_INSTRUCTOR_API_DOMAIN_NAME:
         'a.example.com,b.example.com',
     });
 
