@@ -12,7 +12,7 @@ const config: StagesConfig = stagesConfig;
 /**
  * Resolves stage config for a given project and stage name.
  * Project-specific fields take priority over shared ones, and both are
- * overridable per field by a `<STAGE>_<COMPONENT>_<FIELD>` (or
+ * overridable per field by a `<STAGE>_INFRA_<COMPONENT>_<FIELD>` (or
  * `<STAGE>_REGION` / `<STAGE>_ACCOUNT`) environment variable -- see
  * `applyEnvOverrides` in env-overrides.ts.
  *

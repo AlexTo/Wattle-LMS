@@ -74,7 +74,7 @@ jobs:
           "
 
       # stages.config.ts values can be overridden per stage by
-      # <STAGE>_<COMPONENT>_<FIELD> env vars (see
+      # <STAGE>_INFRA_<COMPONENT>_<FIELD> env vars (see
       # packages/common/infra-config/src/env-overrides.ts), e.g. custom domains
       # and ACM certificate ARNs that shouldn't be committed. Forward every
       # variable on this stage's GitHub environment (or the repo) whose name
