@@ -1247,6 +1247,56 @@ describe('parent restored while being permanently deleted', () => {
       expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
     },
   );
+
+  // With content items in the transaction, the draft check is still told
+  // apart from a changed item: the draft check is always the last result.
+  it.each([
+    ['lesson', 'deleteLesson', () => lessonKey, 'in this lesson'],
+    ['module', 'deleteModule', () => moduleKey, 'in this module'],
+  ] as const)(
+    'a %s delete reports a changed content item, not a publish, when only an item failed its condition',
+    async (_, procedure, key, where) => {
+      lessonQueryPrimary.mockReturnValue(resolves([lesson]));
+      contentItemQueryPrimary.mockReturnValue(
+        resolves([textItem('item-1'), textItem('item-2')]),
+      );
+      // The lesson/module, two items (the first one failed), the draft check.
+      transactionGo.mockResolvedValue({
+        canceled: true,
+        data: [{}, { code: 'ConditionalCheckFailed' }, {}, {}, {}],
+      });
+
+      const error = await callAs()
+        [procedure](key())
+        .catch((caught: unknown) => caught);
+
+      expect(error).toMatchObject({ code: 'CONFLICT' });
+      expect((error as Error).message).toContain(where);
+      expect((error as Error).message).not.toContain('was published');
+    },
+  );
+
+  it.each([
+    ['lesson', 'deleteLesson', () => lessonKey],
+    ['module', 'deleteModule', () => moduleKey],
+  ] as const)(
+    'a %s delete with content items reports the publish when the draft check, the last result, failed',
+    async (_, procedure, key) => {
+      lessonQueryPrimary.mockReturnValue(resolves([lesson]));
+      contentItemQueryPrimary.mockReturnValue(
+        resolves([textItem('item-1'), textItem('item-2')]),
+      );
+      transactionGo.mockResolvedValue({
+        canceled: true,
+        data: [{}, {}, {}, {}, { code: 'ConditionalCheckFailed' }],
+      });
+
+      await expect(callAs()[procedure](key())).rejects.toMatchObject({
+        code: 'CONFLICT',
+        message: expect.stringContaining('was published'),
+      });
+    },
+  );
 });
 
 describe('missing records', () => {
@@ -1778,6 +1828,50 @@ describe('100-record boundary', () => {
     await callAs().deleteModulePermanently(moduleKey);
 
     expect(transactionWrites).toHaveLength(100);
+  });
+
+  // A permanent delete in a draft course also carries the check that the
+  // course is still a draft, so it fits one record fewer.
+  it('deleteLesson in a draft course deletes a lesson with 98 items, plus the draft check', async () => {
+    contentItemQueryPrimary.mockReturnValue(resolves(items(98)));
+
+    await callAs().deleteLesson(lessonKey);
+
+    expect(transactionWrites).toHaveLength(100);
+    expect(transactionWrites.at(-1)).toEqual(
+      draftCourseCheck(lessonKey.courseId),
+    );
+  });
+
+  it('deleteLesson in a draft course refuses a lesson with 99 items, without a transaction', async () => {
+    contentItemQueryPrimary.mockReturnValue(resolves(items(99)));
+
+    await expect(callAs().deleteLesson(lessonKey)).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+    });
+    expect(transactionWrite).not.toHaveBeenCalled();
+  });
+
+  it('deleteModule in a draft course deletes a module with 98 records under it, plus the draft check', async () => {
+    lessonQueryPrimary.mockReturnValue(resolves([lesson]));
+    contentItemQueryPrimary.mockReturnValue(resolves(items(97)));
+
+    await callAs().deleteModule(moduleKey);
+
+    expect(transactionWrites).toHaveLength(100);
+    expect(transactionWrites.at(-1)).toEqual(
+      draftCourseCheck(moduleKey.courseId),
+    );
+  });
+
+  it('deleteModule in a draft course refuses a module with 99 records under it, without a transaction', async () => {
+    lessonQueryPrimary.mockReturnValue(resolves([lesson]));
+    contentItemQueryPrimary.mockReturnValue(resolves(items(98)));
+
+    await expect(callAs().deleteModule(moduleKey)).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+    });
+    expect(transactionWrite).not.toHaveBeenCalled();
   });
 });
 

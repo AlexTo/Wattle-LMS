@@ -800,6 +800,23 @@ describe('viewCourse', () => {
     ...timestamps,
   });
 
+  it('returns when the course was first published, once it has been', async () => {
+    const published = {
+      ...course,
+      status: 'published' as const,
+      publishedAt: '2024-02-01T00:00:00.000Z',
+    };
+    curriculumCollection.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: { course: [published], module: [], lesson: [], contentItem: [] },
+      }),
+    });
+
+    const result = await callAs().viewCourse({ courseId: course.courseId });
+
+    expect(result.publishedAt).toBe('2024-02-01T00:00:00.000Z');
+  });
+
   it('throws FORBIDDEN when the caller does not teach the course', async () => {
     courseInstructorGet.mockReturnValue({
       go: vi.fn().mockResolvedValue({ data: undefined }),
