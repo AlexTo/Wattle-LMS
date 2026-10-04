@@ -2,6 +2,7 @@
  * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
+import { filterEffectivelyVisible } from '@discava/core-table';
 import { TRPCError } from '@trpc/server';
 import { v7 as uuidv7 } from 'uuid';
 import { courseProcedure } from '../init.js';
@@ -154,18 +155,24 @@ export const publishCourse = courseProcedure
       });
     }
 
-    // A draft course has no hidden or archived records, so every content item
-    // in it is one students would see. Every page: a curriculum can exceed
-    // a single 1 MB query page.
+    // Only content students will see counts: a draft course's records can be
+    // hidden or archived too, and publishing the course doesn't change them.
+    // Every page: a curriculum can exceed a single 1 MB query page.
     const {
-      data: { contentItem: contentItems },
+      data: { module: modules, lesson: lessons, contentItem: contentItems },
     } = await coreTable.collections
       .curriculum({ courseId })
       .go({ pages: 'all' });
-    if (contentItems.length === 0) {
+    const visible = filterEffectivelyVisible({
+      modules,
+      lessons,
+      contentItems,
+    });
+    if (visible.contentItems.length === 0) {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
-        message: 'Add at least one content item before publishing the course',
+        message:
+          'Add at least one visible content item before publishing the course',
       });
     }
 

@@ -45,7 +45,8 @@ const {
   curriculumCollection: vi.fn(),
 }));
 
-vi.mock('@discava/core-table', () => ({
+vi.mock('@discava/core-table', async (importActual) => ({
+  ...(await importActual<typeof import('@discava/core-table')>()),
   createCoreTableService: vi.fn(async () => ({
     entities: {
       course: {
@@ -131,7 +132,7 @@ beforeEach(() => {
   coursePatchWhere.mockReturnValue({ go: coursePatchGo });
   curriculumCollection.mockReturnValue({
     go: vi.fn().mockResolvedValue({
-      data: { course: [course], module: [], lesson: [], contentItem: [{}] },
+      data: { course: [course], ...visibleCurriculum },
     }),
   });
   courseInstructorGet.mockReturnValue({
@@ -278,6 +279,13 @@ describe('archiveCourse', () => {
   });
 });
 
+// A module, lesson and content item that students would see.
+const visibleCurriculum = {
+  module: [{ moduleId: 'm1', visibility: 'visible' }],
+  lesson: [{ lessonId: 'l1', moduleId: 'm1', visibility: 'visible' }],
+  contentItem: [{ contentItemId: 'c1', lessonId: 'l1', visibility: 'visible' }],
+};
+
 const conditionalCheckFailed = () =>
   Object.assign(new Error('ElectroDB error'), {
     cause: Object.assign(new Error('The conditional request failed'), {
@@ -357,7 +365,12 @@ describe('publishCourse', () => {
   it('refuses to publish a course with no content items, without writing', async () => {
     curriculumCollection.mockReturnValue({
       go: vi.fn().mockResolvedValue({
-        data: { course: [course], module: [{}], lesson: [{}], contentItem: [] },
+        data: {
+          course: [course],
+          module: visibleCurriculum.module,
+          lesson: visibleCurriculum.lesson,
+          contentItem: [],
+        },
       }),
     });
 
@@ -365,6 +378,71 @@ describe('publishCourse', () => {
       code: 'PRECONDITION_FAILED',
     });
     expect(coursePatch).not.toHaveBeenCalled();
+  });
+
+  // Publishing the course doesn't change its records, so content that is
+  // hidden, archived, or under a hidden or archived module or lesson doesn't
+  // make the course worth publishing.
+  it.each([
+    ['hidden', { contentItem: { visibility: 'hidden' } }],
+    ['archived', { contentItem: { archivedAt: '2024-02-01T00:00:00.000Z' } }],
+    ['under a hidden lesson', { lesson: { visibility: 'hidden' } }],
+    [
+      'under an archived lesson',
+      { lesson: { archivedAt: '2024-02-01T00:00:00.000Z' } },
+    ],
+    ['under a hidden module', { module: { visibility: 'hidden' } }],
+    [
+      'under an archived module',
+      { module: { archivedAt: '2024-02-01T00:00:00.000Z' } },
+    ],
+  ])('refuses to publish when the only content is %s', async (_, change) => {
+    const { module, lesson, contentItem } = visibleCurriculum;
+    curriculumCollection.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: {
+          course: [course],
+          module: [{ ...module[0], ...('module' in change && change.module) }],
+          lesson: [{ ...lesson[0], ...('lesson' in change && change.lesson) }],
+          contentItem: [
+            {
+              ...contentItem[0],
+              ...('contentItem' in change && change.contentItem),
+            },
+          ],
+        },
+      }),
+    });
+
+    await expect(callAs().publishCourse(input)).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+    });
+    expect(coursePatch).not.toHaveBeenCalled();
+  });
+
+  it('publishes when at least one content item is visible, even if others are hidden', async () => {
+    const { module, lesson, contentItem } = visibleCurriculum;
+    curriculumCollection.mockReturnValue({
+      go: vi.fn().mockResolvedValue({
+        data: {
+          course: [course],
+          module,
+          lesson,
+          contentItem: [
+            {
+              ...contentItem[0],
+              contentItemId: 'hidden',
+              visibility: 'hidden',
+            },
+            contentItem[0],
+          ],
+        },
+      }),
+    });
+
+    await callAs().publishCourse(input);
+
+    expect(coursePatch).toHaveBeenCalled();
   });
 
   it('reads every page of the curriculum when counting content', async () => {

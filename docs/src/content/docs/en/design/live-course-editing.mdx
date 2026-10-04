@@ -25,18 +25,18 @@ archived_draft: "Archived\n(never published)" {style.stroke-dash: 3}
 archived_published: "Archived\n(was published)" {style.stroke-dash: 3}
 
 new -> draft
-draft -> published: "publish\n(needs a content item)"
+draft -> published: "publish\n(needs visible content)"
 draft -> archived_draft: archive
 published -> archived_published: archive
 archived_draft -> draft: restore
 archived_published -> published: restore
 ```
 
-- Only a **draft** can be published, and only once it has at least one content item, so a course is never opened up empty. Publishing is refused for an archived course: restore it first.
+- Only a **draft** can be published, and only once it has at least one content item students would see, so a course is never opened up empty. A hidden or archived content item, or one under a hidden or archived module or lesson, doesn't count. Publishing is refused for an archived course: restore it first.
 - The course records `publishedAt` the first time it's published and never clears it. That is how an archived course remembers whether it was ever open to students: **restore returns a course that was published to Published, and one that never was to Draft.** A course students have used never goes back to draft, where delete is permanent.
 - Repeating an action writes nothing: publishing a published course, or restoring a course that isn't archived, returns the course as it is. A retry after a timeout is safe.
 - Each change is conditioned on the status it read, so two requests can't overwrite each other: if the course changed to something else in between, the request returns `CONFLICT`.
-- Publishing a course doesn't change any record under it. A draft course's modules, lessons and content items are already `visible`, so they become visible to students together with the course.
+- Publishing a course doesn't change any record under it. Records that are `visible` in the draft become visible to students together with the course, and hidden ones stay hidden until they're published.
 
 ### Lifecycle of a module, lesson or content item
 
