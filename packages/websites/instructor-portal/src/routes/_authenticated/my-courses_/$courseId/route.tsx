@@ -427,7 +427,8 @@ function RouteComponent() {
         <div className="flex items-start gap-2 rounded-xl border border-dashed bg-muted/30 p-4 text-xs leading-5 text-muted-foreground">
           <Info className="mt-0.5 size-4 shrink-0" /> Modules and lessons shown
           here are live, and you can add new ones, edit or delete lessons or
-          modules. Reordering isn't wired up yet.
+          modules. Drag a content item by its grip to reorder it within its
+          lesson; reordering modules and lessons isn't wired up yet.
         </div>
       )}
     </main>

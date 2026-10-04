@@ -109,6 +109,9 @@ catalog:
   hls.js: 1.7.3
   cn: 0.4.0
   recharts: 3.10.1
+  '@dnd-kit/dom': 0.5.0
+  '@dnd-kit/helpers': 0.5.0
+  '@dnd-kit/react': 0.5.0
   '@tiptap/core': 3.31.3
   '@tiptap/react': 3.31.3
   '@tiptap/pm': 3.31.3
