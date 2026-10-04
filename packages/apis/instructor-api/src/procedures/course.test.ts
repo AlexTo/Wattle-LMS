@@ -20,6 +20,10 @@ const {
   coursePatchSet,
   coursePatchWhere,
   coursePatchGo,
+  coursePatchCommit,
+  moduleCheck,
+  lessonCheck,
+  contentItemCheck,
   courseInstructorCreate,
   courseInstructorGet,
   courseInstructorQueryPrimary,
@@ -35,6 +39,10 @@ const {
   coursePatchSet: vi.fn(),
   coursePatchWhere: vi.fn(),
   coursePatchGo: vi.fn(),
+  coursePatchCommit: vi.fn(),
+  moduleCheck: vi.fn(),
+  lessonCheck: vi.fn(),
+  contentItemCheck: vi.fn(),
   courseInstructorCreate: vi.fn(),
   courseInstructorGet: vi.fn(),
   courseInstructorQueryPrimary: vi.fn(),
@@ -101,6 +109,14 @@ const course = {
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
 
+type CheckCondition = (
+  attr: Record<string, string>,
+  op: Record<string, (...args: string[]) => string>,
+) => string;
+
+// The `where` callback each guard in the publish transaction was given.
+const checkConditions: Record<string, CheckCondition> = {};
+
 beforeEach(() => {
   vi.clearAllMocks();
 
@@ -112,8 +128,11 @@ beforeEach(() => {
   }));
   transactionWrite.mockImplementation((fn) => {
     fn({
-      course: { create: courseCreate },
+      course: { create: courseCreate, patch: coursePatch },
       courseInstructor: { create: courseInstructorCreate },
+      module: { check: moduleCheck },
+      lesson: { check: lessonCheck },
+      contentItem: { check: contentItemCheck },
     });
     return { go: transactionGo };
   });
@@ -129,7 +148,24 @@ beforeEach(() => {
     go: coursePatchGo,
     where: coursePatchWhere,
   });
-  coursePatchWhere.mockReturnValue({ go: coursePatchGo });
+  coursePatchWhere.mockReturnValue({
+    go: coursePatchGo,
+    commit: coursePatchCommit,
+  });
+  // A guard on a record the course's visible content depends on; the
+  // `where` callbacks are kept so tests can read the condition.
+  for (const [name, check] of Object.entries({
+    module: moduleCheck,
+    lesson: lessonCheck,
+    contentItem: contentItemCheck,
+  })) {
+    check.mockImplementation(() => ({
+      where: (condition: CheckCondition) => {
+        checkConditions[name] = condition;
+        return { commit: () => ({}) };
+      },
+    }));
+  }
   curriculumCollection.mockReturnValue({
     go: vi.fn().mockResolvedValue({
       data: { course: [course], ...visibleCurriculum },
@@ -283,7 +319,14 @@ describe('archiveCourse', () => {
 const visibleCurriculum = {
   module: [{ moduleId: 'm1', visibility: 'visible' }],
   lesson: [{ lessonId: 'l1', moduleId: 'm1', visibility: 'visible' }],
-  contentItem: [{ contentItemId: 'c1', lessonId: 'l1', visibility: 'visible' }],
+  contentItem: [
+    {
+      contentItemId: 'c1',
+      lessonId: 'l1',
+      moduleId: 'm1',
+      visibility: 'visible',
+    },
+  ],
 };
 
 const conditionalCheckFailed = () =>
@@ -309,6 +352,25 @@ const conditionOf = () => {
     { eq: (attribute, value) => `${attribute} = ${value}` },
   );
 };
+
+const conditionText = (condition: CheckCondition) =>
+  condition(
+    { visibility: 'visibility', archivedAt: 'archivedAt' },
+    {
+      eq: (attribute, value) => `${attribute} = ${value}`,
+      notExists: (attribute) => `attribute_not_exists(${attribute})`,
+    },
+  );
+
+// The course reads as a draft, then (once the transaction commits) as published.
+const givenPublishCommits = (published: Record<string, unknown>) =>
+  courseGet
+    .mockReturnValueOnce({ go: vi.fn().mockResolvedValue({ data: course }) })
+    .mockReturnValueOnce({
+      go: vi.fn().mockResolvedValue({
+        data: { ...course, status: 'published', ...published },
+      }),
+    });
 
 describe('publishCourse', () => {
   const input = { courseId: course.courseId };
@@ -342,13 +404,7 @@ describe('publishCourse', () => {
   });
 
   it('publishes a draft course that has content, recording when', async () => {
-    coursePatchGo.mockResolvedValue({
-      data: {
-        ...course,
-        status: 'published',
-        publishedAt: '2024-02-01T00:00:00.000Z',
-      },
-    });
+    givenPublishCommits({ publishedAt: '2024-02-01T00:00:00.000Z' });
 
     const result = await callAs().publishCourse(input);
 
@@ -360,6 +416,35 @@ describe('publishCourse', () => {
     // read and the write.
     expect(conditionOf()).toBe('status = draft');
     expect(result).toMatchObject({ status: 'published' });
+  });
+
+  // Invariant: the course can't be published empty, even if its last visible
+  // content is deleted, hidden or archived after the check.
+  it('writes in one transaction guarded by a visible content item and its lesson and module', async () => {
+    givenPublishCommits({});
+
+    await callAs().publishCourse(input);
+
+    expect(transactionWrite).toHaveBeenCalledTimes(1);
+    expect(moduleCheck).toHaveBeenCalledWith({
+      courseId: course.courseId,
+      moduleId: 'm1',
+    });
+    expect(lessonCheck).toHaveBeenCalledWith({
+      courseId: course.courseId,
+      moduleId: 'm1',
+      lessonId: 'l1',
+    });
+    expect(contentItemCheck).toHaveBeenCalledWith({
+      courseId: course.courseId,
+      moduleId: 'm1',
+      lessonId: 'l1',
+      contentItemId: 'c1',
+    });
+    const guard = 'visibility = visible AND attribute_not_exists(archivedAt)';
+    for (const name of ['module', 'lesson', 'contentItem']) {
+      expect(conditionText(checkConditions[name])).toBe(guard);
+    }
   });
 
   it('refuses to publish a course with no content items, without writing', async () => {
@@ -476,8 +561,14 @@ describe('publishCourse', () => {
     expect(courseInstructorPatch).not.toHaveBeenCalled();
   });
 
+  const canceledWith = (...codes: (string | undefined)[]) =>
+    transactionGo.mockResolvedValue({
+      canceled: true,
+      data: codes.map((code) => (code ? { code } : {})),
+    });
+
   it('succeeds when another request published it between the read and the write', async () => {
-    coursePatchGo.mockRejectedValue(conditionalCheckFailed());
+    canceledWith('ConditionalCheckFailed');
     courseGet
       .mockReturnValueOnce({ go: vi.fn().mockResolvedValue({ data: course }) })
       .mockReturnValueOnce({
@@ -492,7 +583,7 @@ describe('publishCourse', () => {
   });
 
   it('reports CONFLICT when the course changed some other way in between', async () => {
-    coursePatchGo.mockRejectedValue(conditionalCheckFailed());
+    canceledWith('ConditionalCheckFailed');
     courseGet
       .mockReturnValueOnce({ go: vi.fn().mockResolvedValue({ data: course }) })
       .mockReturnValueOnce({
@@ -506,20 +597,43 @@ describe('publishCourse', () => {
     });
   });
 
+  it.each([
+    ['module', 1],
+    ['lesson', 2],
+    ['content item', 3],
+  ])(
+    'does not publish when the guarded %s changed after the check',
+    async (_, index) => {
+      canceledWith(
+        ...[0, 1, 2, 3].map((i) =>
+          i === index ? 'ConditionalCheckFailed' : undefined,
+        ),
+      );
+
+      await expect(callAs().publishCourse(input)).rejects.toMatchObject({
+        code: 'CONFLICT',
+        message: "The course's content changed while publishing; please retry",
+      });
+      expect(courseInstructorPatch).not.toHaveBeenCalled();
+    },
+  );
+
+  it('reports INTERNAL_SERVER_ERROR when the transaction is canceled for another reason', async () => {
+    canceledWith(undefined, undefined, undefined, undefined);
+
+    await expect(callAs().publishCourse(input)).rejects.toMatchObject({
+      code: 'INTERNAL_SERVER_ERROR',
+    });
+  });
+
   it('does not swallow other write failures', async () => {
-    coursePatchGo.mockRejectedValue(new Error('DynamoDB is unavailable'));
+    transactionGo.mockRejectedValue(new Error('DynamoDB is unavailable'));
 
     await expect(callAs().publishCourse(input)).rejects.toThrow();
   });
 
   it('refreshes the denormalized courseUpdatedAt on every instructor', async () => {
-    coursePatchGo.mockResolvedValue({
-      data: {
-        ...course,
-        status: 'published',
-        updatedAt: '2024-03-01T00:00:00.000Z',
-      },
-    });
+    givenPublishCommits({ updatedAt: '2024-03-01T00:00:00.000Z' });
     courseInstructorQueryPrimary.mockReturnValue({
       go: vi.fn().mockResolvedValue({
         data: [

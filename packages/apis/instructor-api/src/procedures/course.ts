@@ -176,29 +176,78 @@ export const publishCourse = courseProcedure
       });
     }
 
-    try {
-      const { data: published } = await coreTable.entities.course
-        .patch({ courseId })
-        .set({ status: 'published', publishedAt: new Date().toISOString() })
-        .where((attr, op) => op.eq(attr.status, 'draft'))
-        .go({ response: 'all_new' });
-      await refreshInstructorCourseUpdatedAt(
-        coreTable,
-        courseId,
-        published.updatedAt,
+    // The count above can go stale before the write: a draft course's
+    // content can be permanently deleted, hidden or archived in between. So
+    // the same transaction that publishes the course also checks that one of
+    // the visible content items, and the lesson and module it sits under, is
+    // still there and still visible. If it isn't, nothing is published.
+    const [witness] = visible.contentItems;
+    const { moduleId, lessonId, contentItemId } = witness;
+    const { canceled, data: results } = await coreTable.transaction
+      .write((entities) => [
+        entities.course
+          .patch({ courseId })
+          .set({ status: 'published', publishedAt: new Date().toISOString() })
+          .where((attr, op) => op.eq(attr.status, 'draft'))
+          .commit(),
+        entities.module
+          .check({ courseId, moduleId })
+          .where(
+            (attr, op) =>
+              `${op.eq(attr.visibility, 'visible')} AND ${op.notExists(attr.archivedAt)}`,
+          )
+          .commit(),
+        entities.lesson
+          .check({ courseId, moduleId, lessonId })
+          .where(
+            (attr, op) =>
+              `${op.eq(attr.visibility, 'visible')} AND ${op.notExists(attr.archivedAt)}`,
+          )
+          .commit(),
+        entities.contentItem
+          .check({ courseId, moduleId, lessonId, contentItemId })
+          .where(
+            (attr, op) =>
+              `${op.eq(attr.visibility, 'visible')} AND ${op.notExists(attr.archivedAt)}`,
+          )
+          .commit(),
+      ])
+      .go();
+
+    if (canceled) {
+      const failed = (results ?? []).map(
+        (result: { code?: string } | undefined) =>
+          result?.code === 'ConditionalCheckFailed',
       );
-      return published;
-    } catch (error) {
-      if (!isConditionalCheckFailed(error)) {
-        throw error;
+      if (failed[0]) {
+        // Another request moved the course on between the read and the write.
+        const current = await getCourseOrThrow(coreTable, courseId);
+        if (current.status === 'published') {
+          return current;
+        }
+        throw courseChanged();
       }
-      // Another request moved the course on between the read and the write.
-      const current = await getCourseOrThrow(coreTable, courseId);
-      if (current.status === 'published') {
-        return current;
+      if (failed.slice(1).some(Boolean)) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message:
+            "The course's content changed while publishing; please retry",
+        });
       }
-      throw courseChanged();
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to publish the course',
+      });
     }
+
+    // Transactions don't return the written attributes.
+    const published = await getCourseOrThrow(coreTable, courseId);
+    await refreshInstructorCourseUpdatedAt(
+      coreTable,
+      courseId,
+      published.updatedAt,
+    );
+    return published;
   });
 
 // Brings an archived course back: to published if it has ever been
