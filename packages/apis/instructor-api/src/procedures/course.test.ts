@@ -528,6 +528,13 @@ describe('publishCourse', () => {
     await callAs().publishCourse(input);
 
     expect(coursePatch).toHaveBeenCalled();
+    // The transaction guards the visible item, not the hidden one listed first.
+    expect(contentItemCheck).toHaveBeenCalledWith(
+      expect.objectContaining({ contentItemId: 'c1' }),
+    );
+    expect(contentItemCheck).not.toHaveBeenCalledWith(
+      expect.objectContaining({ contentItemId: 'hidden' }),
+    );
   });
 
   it('reads every page of the curriculum when counting content', async () => {
@@ -646,6 +653,15 @@ describe('publishCourse', () => {
     });
   });
 
+  it('reports INTERNAL_SERVER_ERROR when the cancellation carries no per-item results', async () => {
+    transactionGo.mockResolvedValue({ canceled: true });
+
+    await expect(callAs().publishCourse(input)).rejects.toMatchObject({
+      code: 'INTERNAL_SERVER_ERROR',
+    });
+    expect(courseInstructorPatch).not.toHaveBeenCalled();
+  });
+
   it('does not swallow other write failures', async () => {
     transactionGo.mockRejectedValue(new Error('DynamoDB is unavailable'));
 
@@ -748,6 +764,16 @@ describe('restoreCourse', () => {
     await expect(callAs().restoreCourse(input)).resolves.toMatchObject({
       status: 'published',
     });
+  });
+
+  it('does not swallow other write failures', async () => {
+    givenCourse({ status: 'archived' });
+    coursePatchGo.mockRejectedValue(new Error('DynamoDB is unavailable'));
+
+    await expect(callAs().restoreCourse(input)).rejects.toThrow(
+      'DynamoDB is unavailable',
+    );
+    expect(courseInstructorPatch).not.toHaveBeenCalled();
   });
 
   it('reports CONFLICT when the course is still archived but the write failed its condition', async () => {
