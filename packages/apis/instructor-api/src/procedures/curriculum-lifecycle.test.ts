@@ -250,6 +250,7 @@ const renderCondition = (where: (attr: any, op: any) => string): string =>
     eq: (name: string, value: unknown) => `${name} = ${value}`,
     exists: (name: string) => `exists(${name})`,
     notExists: (name: string) => `not exists(${name})`,
+    ne: (name: string, value: unknown) => `${name} <> ${value}`,
   });
 
 // The check that ends a draft course's permanent delete: the course must
@@ -259,6 +260,15 @@ const draftCourseCheck = (courseId: string) => ({
   op: 'check',
   key: { courseId },
   condition: 'status = draft',
+});
+
+// The check every write carries first: the course still exists and isn't
+// archived (an archived course is read-only).
+const courseCheck = (courseId = COURSE_ID) => ({
+  entity: 'course',
+  op: 'check',
+  key: { courseId },
+  condition: 'exists(courseId) AND status <> archived',
 });
 
 // The two checks every write under a module (and lesson) carries: the
@@ -417,31 +427,58 @@ describe('visibility of new records', () => {
   it.each([
     ['draft', 'visible'],
     ['published', 'hidden'],
-    ['archived', 'hidden'],
   ] as const)(
     'in a %s course, new modules, lessons and content items are %s',
     async (status, visibility) => {
       setCourseStatus(status);
 
-      const createdModule = await callAs().createModule({
+      await callAs().createModule({
         courseId: COURSE_ID,
         title: 'New module',
       });
-      const createdLesson = await callAs().createLesson({
+      await callAs().createLesson({
         ...moduleKey,
         title: 'New lesson',
       });
-      const createdItem = await callAs().createContentItemText({
+      await callAs().createContentItemText({
         ...lessonKey,
         title: 'New text',
         body: '{}',
       });
 
-      expect(createdModule.visibility).toBe(visibility);
-      expect(createdLesson.visibility).toBe(visibility);
-      expect(createdItem.visibility).toBe(visibility);
+      // What was written, not what was read back.
+      for (const entity of ['module', 'lesson', 'contentItem']) {
+        expect(
+          createdRecords.findLast((record) => record.entity === entity)?.values
+            .visibility,
+        ).toBe(visibility);
+      }
     },
   );
+
+  // An archived course is read-only: nothing is added to it.
+  it('refuses to add a module, lesson or content item to an archived course', async () => {
+    setCourseStatus('archived');
+
+    await expect(
+      callAs().createModule({ courseId: COURSE_ID, title: 'New module' }),
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+    await expect(
+      callAs().createLesson({ ...moduleKey, title: 'New lesson' }),
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+    await expect(
+      callAs().createContentItemText({
+        ...lessonKey,
+        title: 'New text',
+        body: '{}',
+      }),
+    ).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the course first',
+    });
+    expect(createdRecords).toEqual([]);
+    expect(transactionWrite).not.toHaveBeenCalled();
+  });
 
   it('refuses to add a lesson to an archived module', async () => {
     moduleGet.mockReturnValue(resolves({ ...module, archivedAt: ARCHIVED_AT }));
@@ -466,105 +503,223 @@ describe('visibility of new records', () => {
   });
 });
 
-// A course archived after being published may still have students with
-// progress and attempts, so it follows the same rules as a published one.
-describe.each(['published', 'archived'] as const)(
-  'delete in a %s course',
-  (status) => {
-    beforeEach(() => {
-      setCourseStatus(status);
+describe('delete in a published course', () => {
+  beforeEach(() => {
+    setCourseStatus('published');
+  });
+
+  // Invariant: outside a draft course, delete never destroys anything --
+  // it only marks the record archived, so it (and every student's data for
+  // it) can be restored. The write runs behind a check that the course isn't
+  // archived.
+  it('archives a module instead of deleting it and everything under it', async () => {
+    moduleGet
+      .mockReturnValueOnce(resolves(module))
+      .mockReturnValueOnce(resolves({ ...module, archivedAt: ARCHIVED_AT }));
+
+    const result = await callAs().deleteModule(moduleKey);
+
+    expect(transactionWrites).toEqual([
+      courseCheck(),
+      {
+        entity: 'module',
+        op: 'patch',
+        key: moduleKey,
+        set: { archivedAt: expect.any(String) },
+      },
+    ]);
+    expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
+    expect(result.archivedAt).toBe(ARCHIVED_AT);
+  });
+
+  it('archives a lesson instead of deleting it and its content items', async () => {
+    lessonGet
+      .mockReturnValueOnce(resolves(lesson))
+      .mockReturnValueOnce(resolves({ ...lesson, archivedAt: ARCHIVED_AT }));
+
+    const result = await callAs().deleteLesson(lessonKey);
+
+    expect(transactionWrites).toEqual([
+      courseCheck(),
+      {
+        entity: 'lesson',
+        op: 'patch',
+        key: lessonKey,
+        set: { archivedAt: expect.any(String) },
+      },
+    ]);
+    expect(result.archivedAt).toBe(ARCHIVED_AT);
+  });
+
+  it('archives a video content item, keeping its S3 objects and transcode', async () => {
+    const video = textItem('item-1', {
+      type: 'video',
+      s3Key: 'key.mp4',
+      mimeType: 'video/mp4',
     });
+    contentItemGet
+      .mockReturnValueOnce(resolves(video))
+      .mockReturnValueOnce(resolves({ ...video, archivedAt: ARCHIVED_AT }));
 
-    // Invariant: outside a draft course, delete never destroys anything --
-    // it only marks the record archived, so it (and every student's data for
-    // it) can be restored.
-    it('archives a module instead of deleting it and everything under it', async () => {
-      const patch = patchChain({ ...module, archivedAt: ARCHIVED_AT });
-      modulePatch.mockReturnValue(patch);
+    await callAs().deleteContentItem(itemKey('item-1'));
 
-      const result = await callAs().deleteModule(moduleKey);
+    expect(transactionWrites).toEqual([
+      courseCheck(),
+      {
+        entity: 'contentItem',
+        op: 'patch',
+        key: itemKey('item-1'),
+        set: { archivedAt: expect.any(String) },
+      },
+    ]);
+    expect(contentItemDelete).not.toHaveBeenCalled();
+    expect(bestEffortCancelTranscodeJobs).not.toHaveBeenCalled();
+    expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
+  });
 
-      expect(modulePatch).toHaveBeenCalledWith(moduleKey);
-      expect(patch.set).toHaveBeenCalledWith({
-        archivedAt: expect.any(String),
+  it('leaves an already archived module untouched, so a retry keeps the original archivedAt', async () => {
+    moduleGet.mockReturnValue(resolves({ ...module, archivedAt: ARCHIVED_AT }));
+
+    const result = await callAs().deleteModule(moduleKey);
+
+    expect(transactionWrite).not.toHaveBeenCalled();
+    expect(result.archivedAt).toBe(ARCHIVED_AT);
+  });
+
+  it('leaves an already archived lesson untouched', async () => {
+    lessonGet.mockReturnValue(resolves({ ...lesson, archivedAt: ARCHIVED_AT }));
+
+    const result = await callAs().deleteLesson(lessonKey);
+
+    expect(transactionWrite).not.toHaveBeenCalled();
+    expect(result.archivedAt).toBe(ARCHIVED_AT);
+  });
+
+  it('leaves an already archived content item untouched', async () => {
+    contentItemGet.mockReturnValue(
+      resolves(textItem('item-1', { archivedAt: ARCHIVED_AT })),
+    );
+
+    const result = await callAs().deleteContentItem(itemKey('item-1'));
+
+    expect(transactionWrite).not.toHaveBeenCalled();
+    expect(contentItemDelete).not.toHaveBeenCalled();
+    expect(result.archivedAt).toBe(ARCHIVED_AT);
+  });
+});
+
+// An archived course is read-only: nothing in it is archived, restored,
+// edited, published or hidden. Permanent delete of records that are already
+// archived stays possible (see deletePermanently below).
+describe('an archived course is read-only', () => {
+  beforeEach(() => {
+    setCourseStatus('archived');
+  });
+
+  it.each([
+    ['deleteModule', moduleKey],
+    ['updateModule', { ...moduleKey, title: 'New title' }],
+    ['hideModule', moduleKey],
+    ['publishModule', moduleKey],
+    ['deleteLesson', lessonKey],
+    ['updateLesson', { ...lessonKey, title: 'New title' }],
+    ['hideLesson', lessonKey],
+    ['publishLesson', lessonKey],
+    ['deleteContentItem', itemKey('item-1')],
+    ['publishContentItem', itemKey('item-1')],
+    ['hideContentItem', itemKey('item-1')],
+    ['updateContentItemText', { ...itemKey('item-1'), title: 'New title' }],
+  ] as const)(
+    '%s is refused with "Restore the course first", and writes nothing',
+    async (procedure, input) => {
+      await expect((callAs() as any)[procedure](input)).rejects.toMatchObject({
+        code: 'PRECONDITION_FAILED',
+        message: 'Restore the course first',
       });
       expect(transactionWrite).not.toHaveBeenCalled();
-      expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
-      expect(result.archivedAt).toBe(ARCHIVED_AT);
-    });
+    },
+  );
 
-    it('archives a lesson instead of deleting it and its content items', async () => {
-      const patch = patchChain({ ...lesson, archivedAt: ARCHIVED_AT });
-      lessonPatch.mockReturnValue(patch);
+  it.each([
+    [
+      'restoreModule',
+      moduleKey,
+      () =>
+        moduleGet.mockReturnValue(
+          resolves({ ...module, archivedAt: ARCHIVED_AT }),
+        ),
+    ],
+    [
+      'restoreLesson',
+      lessonKey,
+      () =>
+        lessonGet.mockReturnValue(
+          resolves({ ...lesson, archivedAt: ARCHIVED_AT }),
+        ),
+    ],
+    [
+      'restoreContentItem',
+      itemKey('item-1'),
+      () =>
+        contentItemGet.mockReturnValue(
+          resolves(textItem('item-1', { archivedAt: ARCHIVED_AT })),
+        ),
+    ],
+  ] as const)(
+    '%s is refused with "Restore the course first", and writes nothing',
+    async (procedure, input, arrange) => {
+      arrange();
 
-      await callAs().deleteLesson(lessonKey);
-
-      expect(lessonPatch).toHaveBeenCalledWith(lessonKey);
-      expect(patch.set).toHaveBeenCalledWith({
-        archivedAt: expect.any(String),
+      await expect((callAs() as any)[procedure](input)).rejects.toMatchObject({
+        code: 'PRECONDITION_FAILED',
+        message: 'Restore the course first',
       });
       expect(transactionWrite).not.toHaveBeenCalled();
+    },
+  );
+
+  // Invariant: the only edit left in an archived course is cleaning up records
+  // that are already archived, so it can be tidied without restoring it (which
+  // would show it to students again). Those deletes don't need the course
+  // check, and are still guarded by the record being archived and having no
+  // student activity.
+  it('still permanently deletes an archived module, and everything under it', async () => {
+    moduleGet.mockReturnValue(resolves({ ...module, archivedAt: ARCHIVED_AT }));
+
+    await callAs().deleteModulePermanently(moduleKey);
+
+    expect(transactionWrites).toEqual([
+      expect.objectContaining({
+        entity: 'module',
+        op: 'delete',
+        key: moduleKey,
+      }),
+    ]);
+  });
+
+  it('still permanently deletes an archived lesson, and its content items', async () => {
+    lessonGet.mockReturnValue(resolves({ ...lesson, archivedAt: ARCHIVED_AT }));
+    contentItemQueryPrimary.mockReturnValue(resolves([textItem('item-1')]));
+
+    await callAs().deleteLessonPermanently(lessonKey);
+
+    expect(
+      transactionWrites.map(({ entity, op }) => `${entity} ${op}`),
+    ).toEqual(['lesson delete', 'contentItem delete']);
+  });
+
+  it('still permanently deletes an archived content item', async () => {
+    const item = textItem('item-1', { archivedAt: ARCHIVED_AT });
+    contentItemGet.mockReturnValue(resolves(item));
+    contentItemDelete.mockReturnValue({
+      where: () => ({ go: vi.fn().mockResolvedValue({ data: item }) }),
     });
 
-    it('archives a video content item, keeping its S3 objects and transcode', async () => {
-      contentItemGet.mockReturnValue(
-        resolves(textItem('item-1', { type: 'video', s3Key: 'key.mp4' })),
-      );
-      const patch = patchChain(
-        textItem('item-1', {
-          type: 'video',
-          s3Key: 'key.mp4',
-          mimeType: 'video/mp4',
-          archivedAt: ARCHIVED_AT,
-        }),
-      );
-      contentItemPatch.mockReturnValue(patch);
+    await callAs().deleteContentItemPermanently(itemKey('item-1'));
 
-      await callAs().deleteContentItem(itemKey('item-1'));
-
-      expect(patch.set).toHaveBeenCalledWith({
-        archivedAt: expect.any(String),
-      });
-      expect(contentItemDelete).not.toHaveBeenCalled();
-      expect(bestEffortCancelTranscodeJobs).not.toHaveBeenCalled();
-      expect(bestEffortDeleteContentItemVideos).not.toHaveBeenCalled();
-    });
-
-    it('leaves an already archived module untouched, so a retry keeps the original archivedAt', async () => {
-      moduleGet.mockReturnValue(
-        resolves({ ...module, archivedAt: ARCHIVED_AT }),
-      );
-
-      const result = await callAs().deleteModule(moduleKey);
-
-      expect(modulePatch).not.toHaveBeenCalled();
-      expect(result.archivedAt).toBe(ARCHIVED_AT);
-    });
-
-    it('leaves an already archived lesson untouched', async () => {
-      lessonGet.mockReturnValue(
-        resolves({ ...lesson, archivedAt: ARCHIVED_AT }),
-      );
-
-      const result = await callAs().deleteLesson(lessonKey);
-
-      expect(lessonPatch).not.toHaveBeenCalled();
-      expect(result.archivedAt).toBe(ARCHIVED_AT);
-    });
-
-    it('leaves an already archived content item untouched', async () => {
-      contentItemGet.mockReturnValue(
-        resolves(textItem('item-1', { archivedAt: ARCHIVED_AT })),
-      );
-
-      const result = await callAs().deleteContentItem(itemKey('item-1'));
-
-      expect(contentItemPatch).not.toHaveBeenCalled();
-      expect(contentItemDelete).not.toHaveBeenCalled();
-      expect(result.archivedAt).toBe(ARCHIVED_AT);
-    });
-  },
-);
+    expect(contentItemDelete).toHaveBeenCalledWith(itemKey('item-1'));
+  });
+});
 
 describe('publishModule', () => {
   // Invariant: publishing a module shows it complete, all at once -- the
@@ -626,6 +781,7 @@ describe('publishModule', () => {
         set: { visibility: 'visible' },
         condition: NOT_ARCHIVED,
       },
+      courseCheck(),
     ]);
     expect(result).toEqual(module);
   });
@@ -677,6 +833,7 @@ describe('publishLesson', () => {
     const result = await callAs().publishLesson(lessonKey);
 
     expect(transactionWrites).toEqual([
+      courseCheck(),
       ancestorCheck('module', moduleKey),
       {
         entity: 'lesson',
@@ -718,6 +875,7 @@ describe('publishContentItem and hide*', () => {
     const result = await callAs().publishContentItem(itemKey('item-1'));
 
     expect(transactionWrites).toEqual([
+      courseCheck(),
       ancestorCheck('module', moduleKey),
       ancestorCheck('lesson', lessonKey),
       {
@@ -746,20 +904,25 @@ describe('publishContentItem and hide*', () => {
   // stop seeing them anyway, since a record is only shown under visible
   // ancestors).
   it('hides only the module itself', async () => {
-    const patch = patchChain({ ...module, visibility: 'hidden' });
-    modulePatch.mockReturnValue(patch);
-
     await callAs().hideModule(moduleKey);
 
-    expect(patch.set).toHaveBeenCalledWith({ visibility: 'hidden' });
-    expect(lessonPatch).not.toHaveBeenCalled();
-    expect(contentItemPatch).not.toHaveBeenCalled();
-    expect(transactionWrite).not.toHaveBeenCalled();
+    // Only the module is written, behind the course check.
+    expect(transactionWrites).toEqual([
+      courseCheck(),
+      {
+        entity: 'module',
+        op: 'patch',
+        key: moduleKey,
+        set: { visibility: 'hidden' },
+        condition: NOT_ARCHIVED,
+      },
+    ]);
   });
 
   it('hides a lesson and a content item', async () => {
     await callAs().hideLesson(lessonKey);
     expect(transactionWrites).toEqual([
+      courseCheck(),
       ancestorCheck('module', moduleKey),
       {
         entity: 'lesson',
@@ -772,6 +935,7 @@ describe('publishContentItem and hide*', () => {
 
     await callAs().hideContentItem(itemKey('item-1'));
     expect(transactionWrites).toEqual([
+      courseCheck(),
       ancestorCheck('module', moduleKey),
       ancestorCheck('lesson', lessonKey),
       {
@@ -796,12 +960,21 @@ describe('publishContentItem and hide*', () => {
 describe('restore', () => {
   it('restores an archived module by removing archivedAt', async () => {
     moduleGet.mockReturnValue(resolves({ ...module, archivedAt: ARCHIVED_AT }));
-    const patch = patchChain(module);
-    modulePatch.mockReturnValue(patch);
+    moduleGet
+      .mockReturnValueOnce(resolves({ ...module, archivedAt: ARCHIVED_AT }))
+      .mockReturnValueOnce(resolves(module));
 
     const result = await callAs().restoreModule(moduleKey);
 
-    expect(patch.remove).toHaveBeenCalledWith(['archivedAt']);
+    expect(transactionWrites).toEqual([
+      courseCheck(),
+      {
+        entity: 'module',
+        op: 'patch',
+        key: moduleKey,
+        remove: ['archivedAt'],
+      },
+    ]);
     expect(result.archivedAt).toBeUndefined();
   });
 
@@ -830,6 +1003,7 @@ describe('restore', () => {
     await callAs().restoreLesson(lessonKey);
 
     expect(transactionWrites).toEqual([
+      courseCheck(),
       ancestorCheck('module', moduleKey),
       { entity: 'lesson', op: 'patch', key: lessonKey, remove: ['archivedAt'] },
     ]);
@@ -869,6 +1043,7 @@ describe('restore', () => {
     await callAs().restoreContentItem(itemKey('item-1'));
 
     expect(transactionWrites).toEqual([
+      courseCheck(),
       ancestorCheck('module', moduleKey),
       ancestorCheck('lesson', lessonKey),
       {
@@ -1086,6 +1261,7 @@ describe('descendants spanning more than one query page', () => {
         set: { visibility: 'visible' },
         condition: NOT_ARCHIVED,
       },
+      courseCheck(),
     ]);
   });
 
@@ -1100,6 +1276,7 @@ describe('descendants spanning more than one query page', () => {
     await callAs().publishLesson(lessonKey);
 
     expect(transactionWrites).toEqual([
+      courseCheck(),
       ancestorCheck('module', moduleKey),
       {
         entity: 'lesson',
@@ -1464,9 +1641,11 @@ describe('DynamoDB 100-item transaction limit', () => {
   });
 
   // The module, a check on the items' (unpublished) lesson, and 98 items.
+  // The transaction also carries the check on the course.
   it('publishModule publishes exactly 100 records in one transaction', async () => {
     moduleGet.mockReturnValue(resolves({ ...module, visibility: 'hidden' }));
-    contentItemQueryPrimary.mockReturnValue(resolves(hiddenItems(98)));
+    // The module, the course check, the lesson check and 97 items.
+    contentItemQueryPrimary.mockReturnValue(resolves(hiddenItems(97)));
 
     await callAs().publishModule(moduleKey);
 
@@ -1617,25 +1796,35 @@ describe('editing an archived record', () => {
   );
 
   it('updateModule still edits a module that is not archived', async () => {
-    const chain = patchChain({ ...module, title: 'New title' });
-    modulePatch.mockReturnValue(chain);
-
     await callAs().updateModule({ ...moduleKey, title: 'New title' });
 
-    expect(chain.set).toHaveBeenCalledWith({ title: 'New title' });
+    expect(transactionWrites).toEqual([
+      courseCheck(),
+      {
+        entity: 'module',
+        op: 'patch',
+        key: moduleKey,
+        set: { title: 'New title' },
+        condition: NOT_ARCHIVED,
+      },
+    ]);
   });
 
   it.each([
     [
       'updateLesson',
       { ...lessonKey, title: 'New title' },
-      [ancestorCheck('module', moduleKey)],
+      [courseCheck(), ancestorCheck('module', moduleKey)],
       { entity: 'lesson', key: lessonKey },
     ],
     [
       'updateContentItemText',
       { ...itemKey('item-1'), title: 'New title' },
-      [ancestorCheck('module', moduleKey), ancestorCheck('lesson', lessonKey)],
+      [
+        courseCheck(),
+        ancestorCheck('module', moduleKey),
+        ancestorCheck('lesson', lessonKey),
+      ],
       { entity: 'contentItem', key: itemKey('item-1') },
     ],
   ] as const)(
@@ -1792,6 +1981,7 @@ describe('lessons spanning more than one query page', () => {
         set: { visibility: 'visible' },
         condition: NOT_ARCHIVED,
       },
+      courseCheck(),
     ]);
   });
 
@@ -1820,12 +2010,13 @@ describe('100-record boundary', () => {
   // Exactly 100 records still fits in one transaction.
   // The transaction also carries the module's check, so a hidden lesson
   // fits 98 hidden items.
-  it('publishLesson publishes a hidden lesson with 98 hidden items', async () => {
+  // The transaction also carries the checks on the course and the module.
+  it('publishLesson publishes a hidden lesson with 97 hidden items', async () => {
     lessonGet
       .mockReturnValueOnce(resolves({ ...lesson, visibility: 'hidden' }))
       .mockReturnValueOnce(resolves(lesson));
     contentItemQueryPrimary.mockReturnValue(
-      resolves(items(98, { visibility: 'hidden' })),
+      resolves(items(97, { visibility: 'hidden' })),
     );
 
     await callAs().publishLesson(lessonKey);
@@ -2093,14 +2284,18 @@ describe('parent archived between the checks and the write', () => {
           }),
         ),
       );
-      transactionGo.mockResolvedValue(refusedAt(0));
+      // The course check is first, then the module's.
+      transactionGo.mockResolvedValue(refusedAt(1));
 
       await expect((callAs() as any)[procedure](input)).rejects.toMatchObject({
         code: 'PRECONDITION_FAILED',
         message: 'Restore the module first',
       });
       // The write was only ever attempted inside the guarded transaction.
-      expect(transactionWrites[0]).toEqual(ancestorCheck('module', moduleKey));
+      expect(transactionWrites.slice(0, 2)).toEqual([
+        courseCheck(),
+        ancestorCheck('module', moduleKey),
+      ]);
     },
   );
 
@@ -2127,13 +2322,15 @@ describe('parent archived between the checks and the write', () => {
           }),
         ),
       );
-      transactionGo.mockResolvedValue(refusedAt(1));
+      // The course check is first, then the module's, then the lesson's.
+      transactionGo.mockResolvedValue(refusedAt(2));
 
       await expect((callAs() as any)[procedure](input)).rejects.toMatchObject({
         code: 'PRECONDITION_FAILED',
         message: 'Restore the lesson first',
       });
-      expect(transactionWrites.slice(0, 2)).toEqual([
+      expect(transactionWrites.slice(0, 3)).toEqual([
+        courseCheck(),
         ancestorCheck('module', moduleKey),
         ancestorCheck('lesson', lessonKey),
       ]);
@@ -2142,7 +2339,8 @@ describe('parent archived between the checks and the write', () => {
 
   it('reports CONFLICT when an ancestor check fails but the ancestor reads as active again', async () => {
     lessonGet.mockReturnValue(resolves({ ...lesson, visibility: 'hidden' }));
-    transactionGo.mockResolvedValue(refusedAt(0));
+    // The course check is first, then the module's.
+    transactionGo.mockResolvedValue(refusedAt(1));
 
     await expect(callAs().publishLesson(lessonKey)).rejects.toMatchObject({
       code: 'CONFLICT',
@@ -2153,7 +2351,7 @@ describe('parent archived between the checks and the write', () => {
     moduleGet
       .mockReturnValueOnce(resolves(module))
       .mockReturnValue(resolves(null));
-    transactionGo.mockResolvedValue(refusedAt(0));
+    transactionGo.mockResolvedValue(refusedAt(1));
 
     await expect(
       callAs().createLesson({ ...moduleKey, title: 'New lesson' }),
@@ -2265,6 +2463,7 @@ describe('a descendant archived while a publish is in flight', () => {
         set: { visibility: 'visible' },
         condition: NOT_ARCHIVED,
       },
+      courseCheck(),
     ]);
   });
 
@@ -2295,4 +2494,70 @@ describe('a descendant archived while a publish is in flight', () => {
       });
     },
   );
+});
+
+// An archived course is read-only, but a check made from an earlier read can
+// be overtaken by the course being archived. Every write is therefore also
+// conditioned on the course not being archived, in the same transaction.
+describe('course archived between the checks and the write', () => {
+  // The course reads as published until a transaction is attempted, then as
+  // archived: the archive landed after the procedure's own checks, and the
+  // course check at the head of the transaction is what cancels the write.
+  const archiveWhenWriting = (results: unknown) => {
+    let archived = false;
+    courseGet.mockImplementation(() =>
+      resolves({
+        courseId: COURSE_ID,
+        status: archived ? 'archived' : 'published',
+      }),
+    );
+    transactionGo.mockImplementation(async () => {
+      archived = true;
+      return results;
+    });
+  };
+  const courseCheckFailed = {
+    canceled: true,
+    data: [{ code: 'ConditionalCheckFailed' }, { code: 'None' }],
+  };
+
+  it.each([
+    ['createModule', { courseId: COURSE_ID, title: 'New module' }],
+    ['updateModule', { ...moduleKey, title: 'New title' }],
+    ['deleteModule', moduleKey],
+    ['createLesson', { ...moduleKey, title: 'New lesson' }],
+    ['updateLesson', { ...lessonKey, title: 'New title' }],
+    ['deleteLesson', lessonKey],
+    ['createContentItemText', { ...lessonKey, title: 'New text', body: '{}' }],
+    ['updateContentItemText', { ...itemKey('item-1'), title: 'New title' }],
+    ['deleteContentItem', itemKey('item-1')],
+  ] as const)(
+    '%s is refused with "Restore the course first" when the course is archived in the meantime',
+    async (procedure, input) => {
+      contentItemGet.mockReturnValue(resolves(textItem('item-1')));
+      archiveWhenWriting(courseCheckFailed);
+
+      await expect((callAs() as any)[procedure](input)).rejects.toMatchObject({
+        code: 'PRECONDITION_FAILED',
+        message: 'Restore the course first',
+      });
+      // The write was only ever attempted behind the course check.
+      expect(transactionWrites[0]).toEqual(courseCheck());
+    },
+  );
+
+  it('publishModule is refused when the course is archived in the meantime', async () => {
+    moduleGet.mockReturnValue(resolves({ ...module, visibility: 'hidden' }));
+    // The course check is the transaction's last item.
+    archiveWhenWriting({
+      canceled: true,
+      data: [{ code: 'None' }, { code: 'ConditionalCheckFailed' }],
+    });
+
+    await expect(callAs().publishModule(moduleKey)).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Restore the course first',
+    });
+    expect(transactionWrites.at(-1)).toEqual(courseCheck());
+  });
 });

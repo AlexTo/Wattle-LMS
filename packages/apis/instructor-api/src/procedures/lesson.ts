@@ -14,10 +14,13 @@ import {
   initialVisibility,
   isDraftCourse,
   MAX_TRANSACTION_ITEMS,
+  requireActiveCourse,
   requireAncestorsNotArchived,
   requireCourseInstructor,
+  requireCourseNotArchived,
   requireNotArchived,
   transactionConflict,
+  writeInActiveCourse,
   writeUnderActiveAncestors,
 } from '../lib/course-lifecycle.js';
 import { bestEffortCancelTranscodeJobs } from '../lib/mediaconvert-client.js';
@@ -209,6 +212,8 @@ export const createLesson = courseProcedure
 
     await requireCourseInstructor(coreTable, courseId, ctx.user.sub);
 
+    const course = await getCourseOrThrow(coreTable, courseId);
+    requireCourseNotArchived(course);
     const { data: module } = await coreTable.entities.module
       .get({ courseId, moduleId })
       .go();
@@ -219,7 +224,6 @@ export const createLesson = courseProcedure
       module,
       'Restore the module before adding lessons to it',
     );
-    const course = await getCourseOrThrow(coreTable, courseId);
 
     // New lessons append to the end of their module. `order` isn't part of
     // any key (lesson counts per module are small enough to sort
@@ -340,14 +344,20 @@ export const deleteLesson = courseProcedure
       return existing;
     }
 
+    // An archived course is read-only, so nothing in it is archived either.
+    requireCourseNotArchived(course);
+
     // Only the lesson itself is marked archived; its content items are hidden
     // from students because their lesson is archived.
-    const { data: lesson } = await coreTable.entities.lesson
-      .patch(key)
-      .set({ archivedAt: new Date().toISOString() })
-      .go({ response: 'all_new' });
+    await writeInActiveCourse(coreTable, courseId, (entities) => [
+      entities.lesson
+        .patch(key)
+        .set({ archivedAt: new Date().toISOString() })
+        .commit(),
+    ]);
 
-    return lesson;
+    // Transactions don't return the written attributes.
+    return getLessonOrThrow(coreTable, key);
   });
 
 // Publishes the lesson along with every hidden content item in it in one
@@ -376,9 +386,9 @@ export const publishLesson = courseProcedure
     if (!publishLessonItself && contentItemsToPublish.length === 0) {
       return existing;
     }
-    // The transaction also carries a check on the module, and a write or
-    // check on the lesson itself.
-    if (2 + contentItemsToPublish.length > MAX_TRANSACTION_ITEMS) {
+    // The transaction also carries a check on the course and one on the
+    // module, and a write or check on the lesson itself.
+    if (3 + contentItemsToPublish.length > MAX_TRANSACTION_ITEMS) {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
         message:
@@ -489,6 +499,8 @@ export const restoreLesson = courseProcedure
     if (!existing.archivedAt) {
       return existing;
     }
+    // An archived course is read-only: restore the course first.
+    await requireActiveCourse(coreTable, courseId);
 
     const { data: module } = await coreTable.entities.module
       .get({ courseId, moduleId })

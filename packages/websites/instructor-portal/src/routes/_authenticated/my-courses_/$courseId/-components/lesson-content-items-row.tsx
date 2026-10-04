@@ -20,6 +20,7 @@ export function LessonContentItemsRow({
   lessonId,
   contentItems,
   archive,
+  readOnly = false,
 }: {
   courseId: string;
   moduleId: string;
@@ -35,6 +36,8 @@ export function LessonContentItemsRow({
   }[];
   // Whether removing a content item archives it (any course but a draft).
   archive: boolean;
+  // An archived course can't be edited: no add, edit or remove controls.
+  readOnly?: boolean;
 }) {
   return (
     <div className="bg-muted/15 pb-3 pl-12 pr-4 sm:pl-24 sm:pr-5">
@@ -51,34 +54,38 @@ export function LessonContentItemsRow({
               {item.title}
             </span>
             {item.visibility === 'hidden' && <HiddenBadge />}
-            <AttachLessonVideoDialog
-              courseId={courseId}
-              moduleId={moduleId}
-              lessonId={lessonId}
-              contentItemId={item.contentItemId}
-              title={item.title}
-              description={item.description}
-              status={item.status}
-              trigger={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  type="button"
-                  aria-label={`Edit ${item.title}`}
-                  className="transition-opacity sm:opacity-0 sm:group-hover/resource:opacity-100 focus-visible:opacity-100"
-                >
-                  <PencilLine />
-                </Button>
-              }
-            />
-            <RemoveLessonVideoButton
-              courseId={courseId}
-              moduleId={moduleId}
-              lessonId={lessonId}
-              contentItemId={item.contentItemId}
-              title={item.title}
-              archive={archive}
-            />
+            {!readOnly && (
+              <>
+                <AttachLessonVideoDialog
+                  courseId={courseId}
+                  moduleId={moduleId}
+                  lessonId={lessonId}
+                  contentItemId={item.contentItemId}
+                  title={item.title}
+                  description={item.description}
+                  status={item.status}
+                  trigger={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      type="button"
+                      aria-label={`Edit ${item.title}`}
+                      className="transition-opacity sm:opacity-0 sm:group-hover/resource:opacity-100 focus-visible:opacity-100"
+                    >
+                      <PencilLine />
+                    </Button>
+                  }
+                />
+                <RemoveLessonVideoButton
+                  courseId={courseId}
+                  moduleId={moduleId}
+                  lessonId={lessonId}
+                  contentItemId={item.contentItemId}
+                  title={item.title}
+                  archive={archive}
+                />
+              </>
+            )}
           </div>
         ) : (
           <div
@@ -92,59 +99,65 @@ export function LessonContentItemsRow({
               {item.title}
             </span>
             {item.visibility === 'hidden' && <HiddenBadge />}
-            <EditLessonTextDialog
-              courseId={courseId}
-              moduleId={moduleId}
-              lessonId={lessonId}
-              contentItemId={item.contentItemId}
-              title={item.title}
-              description={item.description}
-              body={item.body}
-              trigger={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  type="button"
-                  aria-label={`Edit ${item.title}`}
-                  className="transition-opacity sm:opacity-0 sm:group-hover/resource:opacity-100 focus-visible:opacity-100"
-                >
-                  <PencilLine />
-                </Button>
-              }
-            />
-            <RemoveLessonTextButton
-              courseId={courseId}
-              moduleId={moduleId}
-              lessonId={lessonId}
-              contentItemId={item.contentItemId}
-              title={item.title}
-              archive={archive}
-            />
+            {!readOnly && (
+              <>
+                <EditLessonTextDialog
+                  courseId={courseId}
+                  moduleId={moduleId}
+                  lessonId={lessonId}
+                  contentItemId={item.contentItemId}
+                  title={item.title}
+                  description={item.description}
+                  body={item.body}
+                  trigger={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      type="button"
+                      aria-label={`Edit ${item.title}`}
+                      className="transition-opacity sm:opacity-0 sm:group-hover/resource:opacity-100 focus-visible:opacity-100"
+                    >
+                      <PencilLine />
+                    </Button>
+                  }
+                />
+                <RemoveLessonTextButton
+                  courseId={courseId}
+                  moduleId={moduleId}
+                  lessonId={lessonId}
+                  contentItemId={item.contentItemId}
+                  title={item.title}
+                  archive={archive}
+                />
+              </>
+            )}
           </div>
         ),
       )}
-      <div className="flex flex-wrap gap-2 border-l px-3 pt-2">
-        <AttachLessonVideoDialog
-          courseId={courseId}
-          moduleId={moduleId}
-          lessonId={lessonId}
-          trigger={
-            <Button variant="outline" size="sm" type="button">
-              <Video /> Video
-            </Button>
-          }
-        />
-        <EditLessonTextDialog
-          courseId={courseId}
-          moduleId={moduleId}
-          lessonId={lessonId}
-          trigger={
-            <Button variant="outline" size="sm" type="button">
-              <FileText /> Text
-            </Button>
-          }
-        />
-      </div>
+      {!readOnly && (
+        <div className="flex flex-wrap gap-2 border-l px-3 pt-2">
+          <AttachLessonVideoDialog
+            courseId={courseId}
+            moduleId={moduleId}
+            lessonId={lessonId}
+            trigger={
+              <Button variant="outline" size="sm" type="button">
+                <Video /> Video
+              </Button>
+            }
+          />
+          <EditLessonTextDialog
+            courseId={courseId}
+            moduleId={moduleId}
+            lessonId={lessonId}
+            trigger={
+              <Button variant="outline" size="sm" type="button">
+                <FileText /> Text
+              </Button>
+            }
+          />
+        </div>
+      )}
     </div>
   );
 }

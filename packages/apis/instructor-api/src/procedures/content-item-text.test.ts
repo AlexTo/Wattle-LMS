@@ -175,6 +175,7 @@ beforeEach(() => {
   });
   transactionWrite.mockImplementation((fn) => {
     fn({
+      course: { check: ancestorCheck },
       module: { check: ancestorCheck },
       lesson: { check: ancestorCheck },
       contentItem: { create: contentItemCreate, patch: contentItemPatch },
