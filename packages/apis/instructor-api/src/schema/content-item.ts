@@ -34,6 +34,7 @@ const ContentItemBaseSchema = {
   order: z.number(),
   visibility: CurriculumVisibilitySchema,
   archivedAt: z.string().optional(),
+  publishedAt: z.string().optional(),
   studentActivityCount: z.number(),
   createdAt: z.string(),
   updatedAt: z.string(),

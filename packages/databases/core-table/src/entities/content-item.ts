@@ -144,6 +144,13 @@ export const createContentItemEntity = async () =>
         archivedAt: {
           type: 'string',
         },
+        // When the record first became visible; never cleared. A publish of
+        // its parent publishes only hidden descendants without one -- content
+        // that's new -- so one hidden on purpose after it was visible stays
+        // hidden.
+        publishedAt: {
+          type: 'string',
+        },
         // Distinct students with any data for this item. Incremented in the
         // same transaction that creates a student's first record for it, and
         // never decremented, so a non-zero count means permanently deleting

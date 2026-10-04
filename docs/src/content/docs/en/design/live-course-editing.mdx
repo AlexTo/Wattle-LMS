@@ -74,7 +74,7 @@ archived -> deleted: "delete permanently\n(see below)"
 
 - The diagram follows one module, lesson or content item. The course's own status (Draft, Published or Archived) is a separate thing (see above), and none of these actions change it. It decides where a new record starts, whether delete archives the record or removes it, and, for an archived course, that none of these actions are allowed.
 - Students see a record only while it's **Visible** and every ancestor is too (see [Effective visibility](#effective-visibility)).
-- Publishing a module or lesson also publishes every hidden, unarchived record under it, including ones that were hidden on purpose. Hiding, archiving and restoring change only the record itself.
+- Publishing a module or lesson also publishes every hidden, unarchived record under it that has never been published. A record hidden on purpose after it was visible stays hidden. Hiding, archiving and restoring change only the record itself.
 - An archived record keeps its visibility, so restoring it brings it back **Visible** or **Hidden**, as it was. It can only be restored once its parent module or lesson isn't archived.
 - An archived record, and everything under it, is frozen: nothing in it can be published, hidden or edited, and nothing can be added to it.
 - Outside a draft course, every change to what students can see triggers a progress recalculation for everyone enrolled.
@@ -128,6 +128,7 @@ Attributes on the `curriculum` entities that support live editing:
 |---|---|---|
 | `visibility: 'hidden' \| 'visible'` | Modules, lessons, content items | Required. Create procedures set `visible` in draft courses and `hidden` in published ones (an archived course can't be edited), so a new quiz, lesson or module is never seen half-built. The instructor clicks **Publish** to show it |
 | `archivedAt` | Modules, lessons, content items | Soft delete. Set only on the archived record itself; its children are hidden because their parent is archived, not by being archived themselves |
+| `publishedAt` | Modules, lessons, content items | When the record first became visible: at creation in a draft course, or when first published. Never cleared. Publishing a parent publishes only hidden descendants without one, so content hidden on purpose after it was visible stays hidden |
 | `studentActivityCount` | Content items | Number of distinct students with any data for the item. Incremented (`ADD 1`) in the same transaction that creates a student's **first** record for the item: the per-user quiz summary for a quiz, the `itemCompletion` for video or text. Never decremented |
 
 `studentActivityCount` lives in the curriculum partition, so summing or checking it for everything under a module or lesson is one query. The student-side records it counts are keyed by user and can't answer "who used this item?" without a scan.
@@ -168,9 +169,11 @@ Instructors edit through instructor-api's `course.view`, which returns the whole
 
 ## Publishing
 
-Publishing a module or lesson sets it and all of its hidden descendants to `visible` in **one transaction**, so students see a new lesson with all its items at once rather than piece by piece. Archived descendants, and content items under an archived lesson, are left as they are. That holds even if one is archived while the publish is in flight: every lesson and item it changes (and the lesson of every item it publishes) must still be unarchived when the transaction commits, otherwise nothing is published and the request returns `CONFLICT`. Retrying re-reads the module or lesson and skips the newly archived record.
+Publishing a module or lesson sets it and all of its new hidden descendants to `visible` in **one transaction**, so students see a new lesson with all its items at once rather than piece by piece. Archived descendants, and content items under an archived lesson, are left as they are. That holds even if one is archived while the publish is in flight: every lesson and item it changes (and the lesson of every item it publishes) must still be unarchived when the transaction commits, otherwise nothing is published and the request returns `CONFLICT`. Retrying re-reads the module or lesson and skips the newly archived record.
 
-That includes descendants that were hidden on purpose: publishing a module or lesson always publishes everything hidden under it. To keep a lesson or item back, hide it again after publishing its parent.
+Only descendants that have never been published are included. Every module, lesson and content item records `publishedAt` the first time it becomes visible (when it's created in a draft course, or when it's first published) and never clears it. A descendant that's hidden and has no `publishedAt` is new content and is published with its parent. One that's hidden but has a `publishedAt` was hidden on purpose after students could see it, and stays hidden. The record you publish yourself is always published, whatever its history.
+
+The one case this can't tell apart is a record hidden before it was ever published (for example, hiding a new lesson's item while still building it in a published course). That still counts as new, and is published with its parent.
 
 Hiding is not cascaded: it changes only the record itself, and its children keep their own `visibility`. Students stop seeing the children anyway, since a record is only shown under visible ancestors.
 

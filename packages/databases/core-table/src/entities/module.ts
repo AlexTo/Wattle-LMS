@@ -55,6 +55,13 @@ export const createModuleEntity = async () =>
         archivedAt: {
           type: 'string',
         },
+        // When the record first became visible; never cleared. A publish of
+        // its parent publishes only hidden descendants without one -- content
+        // that's new -- so one hidden on purpose after it was visible stays
+        // hidden.
+        publishedAt: {
+          type: 'string',
+        },
         createdAt: {
           type: 'string',
           required: true,

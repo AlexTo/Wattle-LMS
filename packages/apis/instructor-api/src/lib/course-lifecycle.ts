@@ -44,9 +44,23 @@ export const getCourseOrThrow = async (
 export const isDraftCourse = (course: { status: string }) =>
   course.status === 'draft';
 
-export const initialVisibility = (course: {
+// A record's visibility when it's created, and its `publishedAt` if that
+// makes it visible straight away (see firstPublishedAt).
+export const initialVisibilityFields = (course: {
   status: string;
-}): ICurriculumVisibility => (isDraftCourse(course) ? 'visible' : 'hidden');
+}): { visibility: ICurriculumVisibility; publishedAt?: string } =>
+  isDraftCourse(course)
+    ? { visibility: 'visible', publishedAt: new Date().toISOString() }
+    : { visibility: 'hidden' };
+
+// `publishedAt` records the first time a module, lesson or content item
+// became visible, and is never cleared. Publishing a parent publishes only
+// hidden descendants that have never been published -- content that's new --
+// so one hidden on purpose after it was visible stays hidden. Returns the
+// field to set when `record` is being made visible, or nothing if it already
+// has one.
+export const firstPublishedAt = (record: { publishedAt?: string }) =>
+  record.publishedAt ? {} : { publishedAt: new Date().toISOString() };
 
 export const requireNotArchived = (
   record: { archivedAt?: string },
