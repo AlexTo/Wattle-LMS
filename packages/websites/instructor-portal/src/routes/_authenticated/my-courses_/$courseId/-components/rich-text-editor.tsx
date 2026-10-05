@@ -28,9 +28,14 @@ const parseContent = (body: string | undefined) => {
 export function RichTextEditor({
   value,
   onChange,
+  ariaLabel,
+  minHeightClass = 'min-h-32',
 }: {
   value: string | undefined;
   onChange: (body: string) => void;
+  // What the editing area is called to assistive technology, e.g. "Question 2".
+  ariaLabel?: string;
+  minHeightClass?: string;
 }) {
   const editor = useEditor({
     extensions: [StarterKit],
@@ -40,8 +45,11 @@ export function RichTextEditor({
     },
     editorProps: {
       attributes: {
-        class:
-          'prose prose-sm dark:prose-invert max-w-none min-h-32 px-3 py-2 focus:outline-none',
+        class: cn(
+          'prose prose-sm dark:prose-invert max-w-none px-3 py-2 focus:outline-none',
+          minHeightClass,
+        ),
+        ...(ariaLabel && { 'aria-label': ariaLabel }),
       },
     },
   });

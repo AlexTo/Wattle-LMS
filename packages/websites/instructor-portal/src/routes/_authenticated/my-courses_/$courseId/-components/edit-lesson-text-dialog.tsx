@@ -196,6 +196,7 @@ export function RemoveLessonTextButton({
   title,
   archive,
   students = 0,
+  noun = 'text',
 }: {
   courseId: string;
   moduleId: string;
@@ -207,6 +208,8 @@ export function RemoveLessonTextButton({
   archive: boolean;
   // How many students have used it, for the warning on archiving.
   students?: number;
+  // What it's called in the dialog: 'text' by default, or 'quiz'.
+  noun?: string;
 }) {
   const [open, setOpen] = useState(false);
   const { course, contentItem } = useInstructorApi();
@@ -243,11 +246,11 @@ export function RemoveLessonTextButton({
       <AlertDialogContent className="sm:max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {archive ? 'Archive text' : 'Remove text'}
+            {archive ? `Archive ${noun}` : `Remove ${noun}`}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {archive
-              ? `Students will no longer see "${title}". Their progress is kept, and the text can be restored.`
+              ? `Students will no longer see "${title}". Their progress is kept, and the ${noun} can be restored.`
               : `Are you sure you want to remove "${title}"? This can't be undone.`}
           </AlertDialogDescription>
           {archive && studentActivityNote({ students }) && (
@@ -262,7 +265,9 @@ export function RemoveLessonTextButton({
           <Alert
             type="error"
             header={
-              archive ? "Couldn't archive the text" : "Couldn't remove the text"
+              archive
+                ? `Couldn't archive the ${noun}`
+                : `Couldn't remove the ${noun}`
             }
           >
             {error.message}
@@ -296,10 +301,10 @@ export function RemoveLessonTextButton({
             {archive
               ? isPending
                 ? 'Archiving...'
-                : 'Archive text'
+                : `Archive ${noun}`
               : isPending
                 ? 'Removing...'
-                : 'Remove text'}
+                : `Remove ${noun}`}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

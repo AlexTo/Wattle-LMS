@@ -12,13 +12,16 @@ export const BreadcrumbOverrideContext = createContext<{
   setOverride: (pathname: string, label: string | undefined) => void;
 } | null>(null);
 
-export function useBreadcrumbLabel(label: string | undefined) {
+// Labels the current route's crumb, or the crumb for `path` (an ancestor of
+// the current route) when given.
+export function useBreadcrumbLabel(label: string | undefined, path?: string) {
   const ctx = useContext(BreadcrumbOverrideContext);
   const { pathname } = useLocation();
+  const target = path ?? pathname;
 
   useEffect(() => {
     if (!ctx || !label) return;
-    ctx.setOverride(pathname, label);
-    return () => ctx.setOverride(pathname, undefined);
-  }, [ctx, pathname, label]);
+    ctx.setOverride(target, label);
+    return () => ctx.setOverride(target, undefined);
+  }, [ctx, target, label]);
 }
