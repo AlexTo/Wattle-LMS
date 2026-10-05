@@ -30,6 +30,7 @@ import {
 } from '../../../../components/course-status';
 import { Spinner } from '../../../../components/spinner';
 import { useInstructorApi } from '../../../../hooks/useInstructorApi';
+import { ArchivedSection } from './-components/archived-section';
 import { CourseStatusActions } from './-components/course-status-actions';
 import { CreateLessonDialog } from './-components/create-lesson-dialog';
 import { CreateModuleDialog } from './-components/create-module-dialog';
@@ -39,6 +40,7 @@ import { EditLessonDialog } from './-components/edit-lesson-dialog';
 import { EditModuleDialog } from './-components/edit-module-dialog';
 import { HiddenBadge } from './-components/hidden-badge';
 import { LessonContentItemsRow } from './-components/lesson-content-items-row';
+import { usedItemCount } from './-components/student-activity';
 import {
   LessonVisibilityButton,
   ModuleVisibilityButton,
@@ -117,8 +119,8 @@ function RouteComponent() {
       </Alert>
     );
   }
-  // Archived records move out of the editor; students' data for them is
-  // kept and they stay restorable through the API.
+  // Archived records move out of the editor into the Archived section below;
+  // students' data for them is kept and they can be restored from there.
   const course = withoutArchived(fullCourse);
   const status = courseStatusLabels[course.status] ?? 'Draft';
   // Outside a draft course, delete archives instead of destroying anything.
@@ -263,6 +265,11 @@ function RouteComponent() {
                           moduleId={module.moduleId}
                           title={module.title}
                           lessonCount={module.lessons.length}
+                          usedItems={module.lessons.reduce(
+                            (count, lesson) =>
+                              count + usedItemCount(lesson.contentItems),
+                            0,
+                          )}
                           archive={archiveOnDelete}
                           trigger={
                             <Button
@@ -362,6 +369,7 @@ function RouteComponent() {
                                   moduleId={module.moduleId}
                                   lessonId={lesson.lessonId}
                                   title={lesson.title}
+                                  usedItems={usedItemCount(lesson.contentItems)}
                                   archive={archiveOnDelete}
                                   trigger={
                                     <Button
@@ -422,6 +430,12 @@ function RouteComponent() {
           </div>
         )}
       </section>
+
+      <ArchivedSection
+        courseId={course.courseId}
+        modules={fullCourse.modules}
+        readOnly={readOnly}
+      />
 
       {!readOnly && (
         <div className="flex items-start gap-2 rounded-xl border border-dashed bg-muted/30 p-4 text-xs leading-5 text-muted-foreground">

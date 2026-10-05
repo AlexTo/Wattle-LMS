@@ -20,6 +20,7 @@ import { type ReactNode, useState } from 'react';
 import { Alert } from '../../../../../components/alert';
 import { useInstructorApi } from '../../../../../hooks/useInstructorApi';
 import { RichTextEditor } from './rich-text-editor';
+import { studentActivityNote } from './student-activity';
 
 export function EditLessonTextDialog({
   courseId,
@@ -193,6 +194,7 @@ export function RemoveLessonTextButton({
   contentItemId,
   title,
   archive,
+  students = 0,
 }: {
   courseId: string;
   moduleId: string;
@@ -202,6 +204,8 @@ export function RemoveLessonTextButton({
   // Outside a draft course, removing archives the text instead: students
   // stop seeing it, but it and their data for it are kept and restorable.
   archive: boolean;
+  // How many students have used it, for the warning on archiving.
+  students?: number;
 }) {
   const [open, setOpen] = useState(false);
   const { course, contentItem } = useInstructorApi();
@@ -243,6 +247,12 @@ export function RemoveLessonTextButton({
               ? `Students will no longer see "${title}". Their progress is kept, and the text can be restored.`
               : `Are you sure you want to remove "${title}"? This can't be undone.`}
           </p>
+          {archive && studentActivityNote({ students }) && (
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+              {studentActivityNote({ students })}. Their progress is kept, and
+              counts again if it's restored.
+            </p>
+          )}
         </DialogHeader>
 
         {isError && (

@@ -37,6 +37,7 @@ type ContentItem = {
   body?: string;
   status: string;
   visibility: 'hidden' | 'visible';
+  studentActivityCount?: number;
 };
 
 const ROW_CLASS =
@@ -246,6 +247,7 @@ export function LessonContentItemsRow({
               lessonId={lessonId}
               contentItemId={item.contentItemId}
               title={item.title}
+              students={item.studentActivityCount}
               archive={archive}
             />
           </>
@@ -300,6 +302,7 @@ export function LessonContentItemsRow({
               lessonId={lessonId}
               contentItemId={item.contentItemId}
               title={item.title}
+              students={item.studentActivityCount}
               archive={archive}
             />
           </>
