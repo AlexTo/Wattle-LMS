@@ -125,6 +125,10 @@ export function QuizBuilder({
       return;
     }
     const input = toQuizInput(quiz);
+    const refresh = () =>
+      queryClient.invalidateQueries({
+        queryKey: course.view.queryKey({ courseId }),
+      });
     try {
       if (contentItemId === undefined || version === undefined) {
         const created = await createQuiz.mutateAsync({
@@ -134,23 +138,24 @@ export function QuizBuilder({
           ...input,
         });
         setSaved(quiz);
+        // The page finds the quiz in course.view, so it has to include the
+        // new quiz before the URL switches to it.
+        await refresh();
         onCreated(created.contentItemId);
-      } else {
-        const updated = await updateQuiz.mutateAsync({
-          courseId,
-          moduleId,
-          lessonId,
-          contentItemId,
-          quizVersion: version,
-          ...input,
-        });
-        setVersion(updated.quizVersion);
-        setSaved(quiz);
-        setJustSaved(true);
+        return;
       }
-      void queryClient.invalidateQueries({
-        queryKey: course.view.queryKey({ courseId }),
+      const updated = await updateQuiz.mutateAsync({
+        courseId,
+        moduleId,
+        lessonId,
+        contentItemId,
+        quizVersion: version,
+        ...input,
       });
+      setVersion(updated.quizVersion);
+      setSaved(quiz);
+      setJustSaved(true);
+      void refresh();
     } catch {
       // Shown below.
     }
@@ -435,16 +440,17 @@ function SortableQuestion({
   children: (handle: React.ReactNode) => React.ReactNode;
 }) {
   const { ref, handleRef } = useSortable({ id, index, disabled });
+  // The handle is always rendered, disabled when there's nothing to reorder:
+  // without one, dnd-kit makes the whole card the drag source, a (disabled)
+  // button to assistive tech, with every field inside it.
   return (
     <li ref={ref}>
       {children(
-        disabled ? null : (
-          <QuestionHandle
-            label={label}
-            handleRef={handleRef}
-            disabled={disabled}
-          />
-        ),
+        <QuestionHandle
+          label={label}
+          handleRef={handleRef}
+          disabled={disabled}
+        />,
       )}
     </li>
   );

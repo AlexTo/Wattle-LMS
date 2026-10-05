@@ -2,8 +2,10 @@
  * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
+import { useQuery } from '@tanstack/react-query';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { useInstructorApi } from '../../../../../../hooks/useInstructorApi';
 import {
   ApiError,
   renderWithInstructorApi,
@@ -94,19 +96,31 @@ const existing: QuizItem = {
   quizVersion: 4,
 };
 
+// Watches course.view the way the builder's page does, so invalidating it
+// refetches.
+function WithCourseView({ children }: { children: React.ReactNode }) {
+  const { course } = useInstructorApi();
+  useQuery(course.view.queryOptions({ courseId: keys.courseId }));
+  return children;
+}
+
 const renderBuilder = (
   props: Partial<Parameters<typeof QuizBuilder>[0]> = {},
   handlers = {},
+  { watchCourseView = false } = {},
 ) => {
   const onCreated = vi.fn();
   const onReload = vi.fn();
-  const rendered = renderWithInstructorApi(
+  const builder = (
     <QuizBuilder
       {...keys}
       onCreated={onCreated}
       onReload={onReload}
       {...props}
-    />,
+    />
+  );
+  const rendered = renderWithInstructorApi(
+    watchCourseView ? <WithCourseView>{builder}</WithCourseView> : builder,
     { handlers },
   );
   return { ...rendered, onCreated, onReload };
@@ -124,8 +138,17 @@ describe('QuizBuilder', () => {
   it('creates a new quiz, then hands back its id', async () => {
     const { user, calls, onCreated } = renderBuilder(
       {},
-      { 'contentItem.createQuiz': () => ({ contentItemId: 'quiz-new' }) },
+      {
+        'contentItem.createQuiz': () => ({ contentItemId: 'quiz-new' }),
+        'course.view': () => ({}),
+      },
+      { watchCourseView: true },
     );
+    // What had been called by the time the builder handed back the id.
+    let callsWhenCreated: string[] = [];
+    onCreated.mockImplementation(() => {
+      callsWhenCreated = calls.map(({ path }) => path);
+    });
 
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Check');
     await user.type(
@@ -140,6 +163,12 @@ describe('QuizBuilder', () => {
     await user.click(save());
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('quiz-new'));
+    // The page reads the new quiz from course.view, so that's refetched first.
+    expect(callsWhenCreated).toEqual([
+      'course.view',
+      'contentItem.createQuiz',
+      'course.view',
+    ]);
     const input = calls.find(({ path }) => path === 'contentItem.createQuiz')
       ?.input as {
       title: string;
@@ -341,7 +370,14 @@ describe('QuizBuilder', () => {
     expect(
       screen.getByRole('button', { name: 'Remove Question 1' }),
     ).toBeDisabled();
+    // One question: nothing to reorder, but the handle stays (disabled).
+    expect(
+      screen.getByRole('button', { name: 'Reorder Question 1' }),
+    ).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Add question' }));
+    expect(
+      screen.getByRole('button', { name: 'Reorder Question 1' }),
+    ).toBeEnabled();
     expect(
       screen.getByRole('heading', { name: 'Questions (2)' }),
     ).toBeInTheDocument();
@@ -379,8 +415,8 @@ describe('QuizBuilder', () => {
       screen.queryByRole('button', { name: 'Add question' }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: /reorder/i }),
-    ).not.toBeInTheDocument();
+      screen.getByRole('button', { name: 'Reorder Question 1' }),
+    ).toBeDisabled();
     expect(
       screen.queryByText('3 students have attempted this quiz'),
     ).not.toBeInTheDocument();
