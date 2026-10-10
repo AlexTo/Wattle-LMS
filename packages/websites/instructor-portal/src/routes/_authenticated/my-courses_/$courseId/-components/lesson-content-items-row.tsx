@@ -14,7 +14,13 @@ import {
 } from '@dnd-kit/react';
 import { isSortable, useSortable } from '@dnd-kit/react/sortable';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, GripVertical, PencilLine, Video } from 'lucide-react';
+import {
+  FileText,
+  GripVertical,
+  ListChecks,
+  PencilLine,
+  Video,
+} from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from '../../../../../components/alert';
 import { useInstructorApi } from '../../../../../hooks/useInstructorApi';
@@ -27,6 +33,7 @@ import {
   RemoveLessonTextButton,
 } from './edit-lesson-text-dialog';
 import { HiddenBadge } from './hidden-badge';
+import { QuizBuilderDialog } from './quiz/quiz-builder-dialog';
 import { ContentItemVisibilityButton } from './visibility-buttons';
 
 type ContentItem = {
@@ -38,6 +45,8 @@ type ContentItem = {
   status: string;
   visibility: 'hidden' | 'visible';
   studentActivityCount?: number;
+  // A quiz's questions, to show how many it has.
+  questions?: unknown[];
 };
 
 const ROW_CLASS =
@@ -200,7 +209,64 @@ export function LessonContentItemsRow({
 
   // The row's own content, beside its drag handle.
   const renderItem = (item: ContentItem, handle: ReactNode) =>
-    item.type === 'video' ? (
+    item.type === 'quiz' ? (
+      <>
+        {handle}
+        <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+          <ListChecks className="size-3.5" />
+        </div>
+        <span className="flex-1 truncate text-xs font-medium">
+          {item.title}
+        </span>
+        <span className="text-[11px] text-muted-foreground">
+          {item.questions?.length ?? 0}{' '}
+          {item.questions?.length === 1 ? 'question' : 'questions'}
+        </span>
+        {item.visibility === 'hidden' && <HiddenBadge />}
+        {!readOnly && (
+          <>
+            <ContentItemVisibilityButton
+              courseId={courseId}
+              moduleId={moduleId}
+              lessonId={lessonId}
+              contentItemId={item.contentItemId}
+              noun="quiz"
+              title={item.title}
+              visibility={item.visibility}
+              draft={draft}
+              className="transition-opacity sm:opacity-0 sm:group-hover/resource:opacity-100 focus-visible:opacity-100"
+            />
+            <QuizBuilderDialog
+              courseId={courseId}
+              moduleId={moduleId}
+              lessonId={lessonId}
+              contentItemId={item.contentItemId}
+              trigger={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  type="button"
+                  aria-label={`Edit ${item.title}`}
+                  className="transition-opacity sm:opacity-0 sm:group-hover/resource:opacity-100 focus-visible:opacity-100"
+                >
+                  <PencilLine />
+                </Button>
+              }
+            />
+            <RemoveLessonTextButton
+              courseId={courseId}
+              moduleId={moduleId}
+              lessonId={lessonId}
+              contentItemId={item.contentItemId}
+              title={item.title}
+              archive={archive}
+              students={item.studentActivityCount}
+              noun="quiz"
+            />
+          </>
+        )}
+      </>
+    ) : item.type === 'video' ? (
       <>
         {handle}
         <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
@@ -366,6 +432,16 @@ export function LessonContentItemsRow({
             trigger={
               <Button variant="outline" size="sm" type="button">
                 <FileText /> Text
+              </Button>
+            }
+          />
+          <QuizBuilderDialog
+            courseId={courseId}
+            moduleId={moduleId}
+            lessonId={lessonId}
+            trigger={
+              <Button variant="outline" size="sm" type="button">
+                <ListChecks /> Quiz
               </Button>
             }
           />

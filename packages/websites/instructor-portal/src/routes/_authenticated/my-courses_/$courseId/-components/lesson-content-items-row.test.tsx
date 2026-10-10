@@ -2,7 +2,7 @@
  * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import {
   ApiError,
@@ -200,5 +200,80 @@ describe('LessonContentItemsRow', () => {
     expect(
       screen.getAllByText(/^Item [ABC]$/).map((node) => node.textContent),
     ).toEqual(['Item A', 'Item B', 'Item C']);
+  });
+
+  it('shows a quiz with its question count, and opens it to edit in the builder', async () => {
+    const quiz = {
+      ...item('q', 'Module check'),
+      type: 'quiz',
+      questions: [{}, {}, {}],
+    };
+    const { user } = renderRow(
+      { contentItems: [quiz] },
+      {
+        'course.view': () => ({
+          status: 'published',
+          modules: [
+            {
+              moduleId: 'module-1',
+              title: 'Module One',
+              lessons: [
+                {
+                  lessonId: 'lesson-1',
+                  title: 'Lesson One',
+                  contentItems: [
+                    {
+                      ...quiz,
+                      questions: [],
+                      answerKey: {},
+                      settings: {
+                        passMarkPercent: 70,
+                        attemptsAllowed: null,
+                        shuffleOptions: false,
+                        revealAnswers: 'never',
+                      },
+                      quizVersion: 2,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      },
+    );
+
+    expect(screen.getByText('3 questions')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Hide quiz Module check' }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Edit Module check' }));
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Edit Module check',
+    });
+    expect(
+      await within(dialog).findByText('In Module One › Lesson One'),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole('textbox', { name: 'Title' })).toHaveValue(
+      'Module check',
+    );
+  });
+
+  it('opens a new quiz in the builder from the Quiz button', async () => {
+    const { user } = renderRow({}, { 'course.view': () => ({ modules: [] }) });
+
+    await user.click(screen.getByRole('button', { name: 'Quiz' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'New quiz' });
+    expect(within(dialog).getByRole('textbox', { name: 'Title' })).toHaveValue(
+      '',
+    );
+  });
+
+  it('in an archived course, offers no Quiz button', () => {
+    renderRow({ readOnly: true });
+
+    expect(screen.queryByRole('button', { name: 'Quiz' })).toBeNull();
   });
 });

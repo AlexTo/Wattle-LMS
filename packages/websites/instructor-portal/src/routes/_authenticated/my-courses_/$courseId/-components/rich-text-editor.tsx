@@ -4,6 +4,7 @@
  */
 
 import { Toggle } from '@discava/common-shadcn/components/ui/toggle';
+import { cn } from '@discava/common-shadcn/lib/utils';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Bold, Heading2, Italic, List, ListOrdered } from 'lucide-react';
@@ -28,9 +29,14 @@ const parseContent = (body: string | undefined) => {
 export function RichTextEditor({
   value,
   onChange,
+  ariaLabel,
+  minHeightClass = 'min-h-32',
 }: {
   value: string | undefined;
   onChange: (body: string) => void;
+  // What the editing area is called to assistive technology, e.g. "Question 2".
+  ariaLabel?: string;
+  minHeightClass?: string;
 }) {
   const editor = useEditor({
     extensions: [StarterKit],
@@ -40,8 +46,11 @@ export function RichTextEditor({
     },
     editorProps: {
       attributes: {
-        class:
-          'prose prose-sm dark:prose-invert max-w-none min-h-32 px-3 py-2 focus:outline-none',
+        class: cn(
+          'prose prose-sm dark:prose-invert max-w-none px-3 py-2 focus:outline-none',
+          minHeightClass,
+        ),
+        ...(ariaLabel && { 'aria-label': ariaLabel }),
       },
     },
   });
