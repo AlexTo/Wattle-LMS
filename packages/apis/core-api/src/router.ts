@@ -10,11 +10,14 @@ import {
   publicViewCourse,
   viewCourse,
 } from './procedures/course.js';
+import { enrol, myEnrolment } from './procedures/enrolment.js';
 
 export const router = t.router;
 
 export const appRouter = router({
   course: router({
+    enrol,
+    myEnrolment,
     listByInstructor: listCoursesByInstructor,
     listInstructors: listInstructorsForCourse,
     publicList: publicListCourses,

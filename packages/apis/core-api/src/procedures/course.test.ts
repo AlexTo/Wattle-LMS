@@ -19,6 +19,7 @@ const {
   courseQueryByStatus,
   courseGet,
   userGet,
+  enrolmentGet,
   curriculumCollection,
 } = vi.hoisted(() => ({
   courseInstructorQueryByInstructor: vi.fn(),
@@ -26,6 +27,7 @@ const {
   courseQueryByStatus: vi.fn(),
   courseGet: vi.fn(),
   userGet: vi.fn(),
+  enrolmentGet: vi.fn(),
   curriculumCollection: vi.fn(),
 }));
 
@@ -38,6 +40,7 @@ vi.mock('@discava/core-table', async (importOriginal) => ({
         query: { byStatus: courseQueryByStatus },
       },
       user: { get: userGet },
+      enrolment: { get: enrolmentGet },
       courseInstructor: {
         query: {
           byInstructor: courseInstructorQueryByInstructor,
@@ -93,8 +96,21 @@ const course = {
   updatedAt: '2024-01-01T00:00:00.000Z',
 };
 
+const enrolment = (status: 'active' | 'completed' | 'dropped' = 'active') => ({
+  courseId: 'course-1',
+  userId: USER_SUB,
+  status,
+  progressPercent: 0,
+  createdAt: '2024-01-02T00:00:00.000Z',
+  updatedAt: '2024-01-02T00:00:00.000Z',
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
+  // The caller is enrolled, unless a test says otherwise.
+  enrolmentGet.mockReturnValue({
+    go: vi.fn().mockResolvedValue({ data: enrolment() }),
+  });
 });
 
 describe('listCoursesByInstructor', () => {
@@ -488,6 +504,84 @@ describe('viewCourse', () => {
     await expect(
       callAsUser().viewCourse({ courseId: 'missing' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  describe('enrolment', () => {
+    const curriculum = (status: 'draft' | 'published' | 'archived') =>
+      curriculumCollection.mockReturnValue({
+        go: vi.fn().mockResolvedValue({
+          data: {
+            course: [{ ...course, status }],
+            module: [],
+            lesson: [],
+            contentItem: [],
+          },
+        }),
+      });
+    const notEnrolled = (data: unknown = null) =>
+      enrolmentGet.mockReturnValue({
+        go: vi.fn().mockResolvedValue({ data }),
+      });
+
+    it('reads the caller’s own enrolment in the course', async () => {
+      curriculum('published');
+
+      await callAsUser().viewCourse({ courseId: course.courseId });
+
+      expect(enrolmentGet).toHaveBeenCalledWith({
+        courseId: course.courseId,
+        userId: USER_SUB,
+      });
+    });
+
+    // Invariant: only enrolled students read a course's content.
+    it('is FORBIDDEN for a published course the caller isn’t enrolled in', async () => {
+      curriculum('published');
+      notEnrolled();
+
+      await expect(
+        callAsUser().viewCourse({ courseId: course.courseId }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('treats a dropped enrolment as not enrolled', async () => {
+      curriculum('published');
+      notEnrolled(enrolment('dropped'));
+
+      await expect(
+        callAsUser().viewCourse({ courseId: course.courseId }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    // A draft's existence isn't leaked to someone who isn't enrolled.
+    it.each(['draft', 'archived'] as const)(
+      'is NOT_FOUND for a %s course the caller isn’t enrolled in',
+      async (status) => {
+        curriculum(status);
+        notEnrolled();
+
+        await expect(
+          callAsUser().viewCourse({ courseId: course.courseId }),
+        ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      },
+    );
+
+    it('still shows an archived course to an enrolled student', async () => {
+      curriculum('archived');
+
+      await expect(
+        callAsUser().viewCourse({ courseId: course.courseId }),
+      ).resolves.toMatchObject({ status: 'archived' });
+    });
+
+    it('shows a course to a student who has completed it', async () => {
+      curriculum('published');
+      notEnrolled(enrolment('completed'));
+
+      await expect(
+        callAsUser().viewCourse({ courseId: course.courseId }),
+      ).resolves.toMatchObject({ courseId: course.courseId });
+    });
   });
 
   // Invariant: students never see a module, lesson or content item that is
