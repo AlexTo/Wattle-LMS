@@ -225,27 +225,30 @@ export function QuizBuilder({
         >
           <ol className="space-y-0.5 text-sm">
             <li>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => setScrollTarget('settings')}
-                className="w-full rounded-md px-2 py-1.5 text-left font-medium hover:bg-muted"
+                className="w-full justify-start px-2"
               >
                 Settings
-              </button>
+              </Button>
             </li>
             {quiz.questions.map((question, index) => {
               const needsFixing =
                 showProblems && Boolean(errors.questions[question.questionId]);
               return (
                 <li key={question.questionId}>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
                     aria-current={
                       expanded === question.questionId ? 'true' : undefined
                     }
                     onClick={() => jumpTo(question.questionId)}
                     className={cn(
-                      'flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted',
+                      'h-auto w-full items-start justify-start gap-2 px-2 py-1.5 text-left font-normal whitespace-normal',
                       expanded === question.questionId && 'bg-muted',
                     )}
                   >
@@ -263,7 +266,7 @@ export function QuizBuilder({
                         <span className="sr-only">(needs fixing)</span>
                       </span>
                     )}
-                  </button>
+                  </Button>
                 </li>
               );
             })}

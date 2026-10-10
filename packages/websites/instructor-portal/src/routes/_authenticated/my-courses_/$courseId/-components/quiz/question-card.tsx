@@ -13,6 +13,10 @@ import {
   DialogTitle,
 } from '@discava/common-shadcn/components/ui/dialog';
 import { Input } from '@discava/common-shadcn/components/ui/input';
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from '@discava/common-shadcn/components/ui/toggle-group';
 import { cn } from '@discava/common-shadcn/lib/utils';
 import {
   ArrowDown,
@@ -197,29 +201,21 @@ export function QuestionCard({
 
           <fieldset className="space-y-2" disabled={readOnly}>
             <legend className="text-sm font-medium">Answers</legend>
-            <div
-              role="radiogroup"
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              value={question.kind}
+              // Clicking the selected kind again would clear it; keep it.
+              onValueChange={(kind) => kind && setKind(kind as QuestionKind)}
+              disabled={readOnly}
               aria-label={`${label} type`}
-              className="inline-flex rounded-lg border p-0.5"
             >
-              {(['single', 'multiple'] as const).map((kind) => (
-                <button
-                  key={kind}
-                  type="button"
-                  role="radio"
-                  aria-checked={question.kind === kind}
-                  onClick={() => setKind(kind)}
-                  className={cn(
-                    'rounded-md px-3 py-1 text-xs font-medium',
-                    question.kind === kind
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {kind === 'single' ? 'Single choice' : 'Multiple choice'}
-                </button>
-              ))}
-            </div>
+              <ToggleGroupItem value="single">Single choice</ToggleGroupItem>
+              <ToggleGroupItem value="multiple">
+                Multiple choice
+              </ToggleGroupItem>
+            </ToggleGroup>
             <p className="text-xs text-muted-foreground">
               {question.kind === 'single'
                 ? 'Mark the one correct option.'
@@ -414,14 +410,16 @@ export function QuestionHandle({
   disabled: boolean;
 }) {
   return (
-    <button
+    <Button
       ref={handleRef}
       type="button"
+      variant="ghost"
+      size="icon-xs"
       aria-label={`Reorder ${label}`}
       disabled={disabled}
-      className="flex size-6 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring active:cursor-grabbing disabled:cursor-not-allowed"
+      className="cursor-grab touch-none text-muted-foreground active:cursor-grabbing"
     >
       <GripVertical className="size-4" />
-    </button>
+    </Button>
   );
 }
