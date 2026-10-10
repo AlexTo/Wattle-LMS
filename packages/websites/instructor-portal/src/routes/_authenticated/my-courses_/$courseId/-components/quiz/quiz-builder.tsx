@@ -4,7 +4,16 @@
  */
 
 import { Button } from '@discava/common-shadcn/components/ui/button';
+import { Checkbox } from '@discava/common-shadcn/components/ui/checkbox';
 import { Input } from '@discava/common-shadcn/components/ui/input';
+import { Label } from '@discava/common-shadcn/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@discava/common-shadcn/components/ui/select';
 import { Textarea } from '@discava/common-shadcn/components/ui/textarea';
 import { cn } from '@discava/common-shadcn/lib/utils';
 import { move } from '@dnd-kit/helpers';
@@ -12,7 +21,7 @@ import { DragDropProvider, type DragEndEvent } from '@dnd-kit/react';
 import { useSortable } from '@dnd-kit/react/sortable';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CirclePlus, Save } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Alert } from '../../../../../../components/alert';
 import { useInstructorApi } from '../../../../../../hooks/useInstructorApi';
 import { QuestionCard, QuestionHandle } from './question-card';
@@ -93,6 +102,8 @@ export function QuizBuilder({
   const saving = createQuiz.isPending || updateQuiz.isPending;
   const saveError = createQuiz.error ?? updateQuiz.error;
   const readOnly = Boolean(readOnlyReason);
+  // Prefix for the settings fields' ids, which their labels point at.
+  const ids = useId();
 
   const errors = validateQuiz(quiz);
   const dirty = JSON.stringify(quiz) !== JSON.stringify(saved);
@@ -283,29 +294,32 @@ export function QuizBuilder({
               Settings
             </h2>
             <fieldset disabled={readOnly} className="grid gap-4 sm:grid-cols-2">
-              <label className="space-y-1.5 sm:col-span-2">
-                <span className="text-sm font-medium">Title</span>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor={`${ids}-title`}>Title</Label>
                 <Input
+                  id={`${ids}-title`}
                   value={quiz.title}
                   onChange={(event) => change({ title: event.target.value })}
                   maxLength={200}
                 />
-              </label>
-              <label className="space-y-1.5 sm:col-span-2">
-                <span className="text-sm font-medium">
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor={`${ids}-description`}>
                   Description (optional)
-                </span>
+                </Label>
                 <Textarea
+                  id={`${ids}-description`}
                   value={quiz.description}
                   onChange={(event) =>
                     change({ description: event.target.value })
                   }
                   rows={2}
                 />
-              </label>
-              <label className="space-y-1.5">
-                <span className="text-sm font-medium">Pass mark (%)</span>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor={`${ids}-pass-mark`}>Pass mark (%)</Label>
                 <Input
+                  id={`${ids}-pass-mark`}
                   type="number"
                   min={0}
                   max={100}
@@ -321,23 +335,25 @@ export function QuizBuilder({
                     })
                   }
                 />
-              </label>
+              </div>
               <div className="space-y-1.5">
                 <span className="text-sm font-medium">Attempts allowed</span>
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
+                <div className="flex h-9 items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id={`${ids}-unlimited`}
                       checked={quiz.settings.attemptsAllowed === null}
-                      onChange={(event) =>
+                      onCheckedChange={(checked) =>
                         changeSettings({
-                          attemptsAllowed: event.target.checked ? null : 3,
+                          attemptsAllowed: checked === true ? null : 3,
                         })
                       }
-                      className="size-4 accent-primary"
+                      disabled={readOnly}
                     />
-                    Unlimited
-                  </label>
+                    <Label htmlFor={`${ids}-unlimited`} className="font-normal">
+                      Unlimited
+                    </Label>
+                  </div>
                   {quiz.settings.attemptsAllowed !== null && (
                     <Input
                       type="number"
@@ -359,37 +375,42 @@ export function QuizBuilder({
                   )}
                 </div>
               </div>
-              <label className="space-y-1.5">
-                <span className="text-sm font-medium">
+              <div className="space-y-1.5">
+                <Label htmlFor={`${ids}-reveal`}>
                   Show the correct answers
-                </span>
-                <select
+                </Label>
+                <Select
                   value={quiz.settings.revealAnswers}
-                  onChange={(event) =>
-                    changeSettings({
-                      revealAnswers: event.target.value as RevealAnswers,
-                    })
+                  onValueChange={(value) =>
+                    changeSettings({ revealAnswers: value as RevealAnswers })
                   }
-                  className="block h-9 w-full rounded-md border bg-background px-3 text-sm"
+                  disabled={readOnly}
                 >
-                  {Object.entries(REVEAL_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center gap-2 self-end text-sm">
-                <input
-                  type="checkbox"
+                  <SelectTrigger id={`${ids}-reveal`} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(REVEAL_LABELS).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2 self-end sm:h-9">
+                <Checkbox
+                  id={`${ids}-shuffle`}
                   checked={quiz.settings.shuffleOptions}
-                  onChange={(event) =>
-                    changeSettings({ shuffleOptions: event.target.checked })
+                  onCheckedChange={(checked) =>
+                    changeSettings({ shuffleOptions: checked === true })
                   }
-                  className="size-4 accent-primary"
+                  disabled={readOnly}
                 />
-                Shuffle the options for each student
-              </label>
+                <Label htmlFor={`${ids}-shuffle`} className="font-normal">
+                  Shuffle the options for each student
+                </Label>
+              </div>
             </fieldset>
           </section>
 

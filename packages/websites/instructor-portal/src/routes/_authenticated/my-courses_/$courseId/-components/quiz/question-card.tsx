@@ -5,6 +5,7 @@
 
 import { Badge } from '@discava/common-shadcn/components/ui/badge';
 import { Button } from '@discava/common-shadcn/components/ui/button';
+import { Checkbox } from '@discava/common-shadcn/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -13,6 +14,11 @@ import {
   DialogTitle,
 } from '@discava/common-shadcn/components/ui/dialog';
 import { Input } from '@discava/common-shadcn/components/ui/input';
+import { Label } from '@discava/common-shadcn/components/ui/label';
+import {
+  RadioGroup,
+  RadioGroupItem,
+} from '@discava/common-shadcn/components/ui/radio-group';
 import {
   ToggleGroup,
   ToggleGroupItem,
@@ -124,6 +130,81 @@ export function QuestionCard({
 
   const summary = plainText(question.prompt) || 'No question written yet';
 
+  // Each option with its correct marker: a radio (inside the RadioGroup below)
+  // for single choice, a checkbox for multiple.
+  const options = (
+    <ol className="space-y-2">
+      {question.options.map((option, index) => (
+        <li key={option.optionId} className="flex items-center gap-2">
+          {question.kind === 'single' ? (
+            <RadioGroupItem
+              value={option.optionId}
+              aria-label={`Option ${index + 1} is correct`}
+            />
+          ) : (
+            <Checkbox
+              checked={question.correct.includes(option.optionId)}
+              onCheckedChange={(checked) =>
+                setCorrect(option.optionId, checked === true)
+              }
+              disabled={readOnly}
+              aria-label={`Option ${index + 1} is correct`}
+            />
+          )}
+          <Input
+            value={option.text}
+            onChange={(event) => setOption(index, event.target.value)}
+            aria-label={`Option ${index + 1}`}
+            placeholder={`Option ${index + 1}`}
+            maxLength={500}
+          />
+          {!readOnly && (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Move option ${index + 1} up`}
+                disabled={index === 0}
+                onClick={() =>
+                  update({
+                    options: move(question.options, index, index - 1),
+                  })
+                }
+              >
+                <ArrowUp />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Move option ${index + 1} down`}
+                disabled={index === question.options.length - 1}
+                onClick={() =>
+                  update({
+                    options: move(question.options, index, index + 1),
+                  })
+                }
+              >
+                <ArrowDown />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remove option ${index + 1}`}
+                disabled={question.options.length <= MIN_OPTIONS}
+                onClick={() => removeOption(index)}
+              >
+                <X />
+              </Button>
+            </>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+
   return (
     <div
       className={cn(
@@ -221,71 +302,19 @@ export function QuestionCard({
                 ? 'Mark the one correct option.'
                 : 'Mark every correct option. Students are told to select all that apply.'}
             </p>
-            <ol className="space-y-2">
-              {question.options.map((option, index) => (
-                <li key={option.optionId} className="flex items-center gap-2">
-                  <input
-                    type={question.kind === 'single' ? 'radio' : 'checkbox'}
-                    name={`correct-${question.questionId}`}
-                    checked={question.correct.includes(option.optionId)}
-                    onChange={(event) =>
-                      setCorrect(option.optionId, event.target.checked)
-                    }
-                    aria-label={`Option ${index + 1} is correct`}
-                    className="size-4 shrink-0 accent-primary"
-                  />
-                  <Input
-                    value={option.text}
-                    onChange={(event) => setOption(index, event.target.value)}
-                    aria-label={`Option ${index + 1}`}
-                    placeholder={`Option ${index + 1}`}
-                    maxLength={500}
-                  />
-                  {!readOnly && (
-                    <>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Move option ${index + 1} up`}
-                        disabled={index === 0}
-                        onClick={() =>
-                          update({
-                            options: move(question.options, index, index - 1),
-                          })
-                        }
-                      >
-                        <ArrowUp />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Move option ${index + 1} down`}
-                        disabled={index === question.options.length - 1}
-                        onClick={() =>
-                          update({
-                            options: move(question.options, index, index + 1),
-                          })
-                        }
-                      >
-                        <ArrowDown />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Remove option ${index + 1}`}
-                        disabled={question.options.length <= MIN_OPTIONS}
-                        onClick={() => removeOption(index)}
-                      >
-                        <X />
-                      </Button>
-                    </>
-                  )}
-                </li>
-              ))}
-            </ol>
+            {question.kind === 'single' ? (
+              <RadioGroup
+                value={question.correct[0] ?? ''}
+                onValueChange={(optionId) => setCorrect(optionId, true)}
+                disabled={readOnly}
+                aria-label={`${label} correct option`}
+                className="block"
+              >
+                {options}
+              </RadioGroup>
+            ) : (
+              options
+            )}
             {!readOnly && (
               <Button
                 type="button"
@@ -350,27 +379,29 @@ export function QuestionCard({
               keep; the others will be marked incorrect.
             </p>
           </DialogHeader>
-          <fieldset className="space-y-2">
-            <legend className="sr-only">Correct option to keep</legend>
+          <RadioGroup
+            value={keepChoice}
+            onValueChange={setKeepChoice}
+            aria-label="Correct option to keep"
+          >
             {question.options
               .filter(({ optionId }) => question.correct.includes(optionId))
               .map((option) => (
-                <label
-                  key={option.optionId}
-                  className="flex items-center gap-2 text-sm"
-                >
-                  <input
-                    type="radio"
-                    name={`keep-${question.questionId}`}
-                    checked={keepChoice === option.optionId}
-                    onChange={() => setKeepChoice(option.optionId)}
-                    className="size-4 accent-primary"
+                <div key={option.optionId} className="flex items-center gap-2">
+                  <RadioGroupItem
+                    value={option.optionId}
+                    id={`keep-${option.optionId}`}
                   />
-                  {option.text ||
-                    `Option ${question.options.indexOf(option) + 1}`}
-                </label>
+                  <Label
+                    htmlFor={`keep-${option.optionId}`}
+                    className="font-normal"
+                  >
+                    {option.text ||
+                      `Option ${question.options.indexOf(option) + 1}`}
+                  </Label>
+                </div>
               ))}
-          </fieldset>
+          </RadioGroup>
           <DialogFooter>
             <Button
               type="button"

@@ -397,6 +397,43 @@ describe('QuizBuilder', () => {
     ).toBeInTheDocument();
   });
 
+  it('saves the settings chosen', async () => {
+    const { user, calls } = renderExisting({
+      'contentItem.updateQuiz': () => ({
+        contentItemId: 'quiz-1',
+        quizVersion: 5,
+      }),
+    });
+
+    await user.click(screen.getByRole('checkbox', { name: 'Unlimited' }));
+    const attempts = screen.getByRole('spinbutton', {
+      name: 'Number of attempts',
+    });
+    expect(attempts).toHaveValue(3);
+    await user.clear(attempts);
+    await user.type(attempts, '2');
+    await user.click(
+      screen.getByRole('checkbox', {
+        name: 'Shuffle the options for each student',
+      }),
+    );
+    await user.click(
+      screen.getByRole('combobox', { name: 'Show the correct answers' }),
+    );
+    await user.click(screen.getByRole('option', { name: 'Never' }));
+    await user.click(save());
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].input).toMatchObject({
+      settings: {
+        passMarkPercent: 70,
+        attemptsAllowed: 2,
+        shuffleOptions: true,
+        revealAnswers: 'never',
+      },
+    });
+  });
+
   it('lists the questions in a contents panel, opening the one clicked', async () => {
     const { user } = renderExisting();
     const contents = screen.getByRole('navigation', { name: 'Quiz contents' });
