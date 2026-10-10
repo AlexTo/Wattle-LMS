@@ -66,6 +66,7 @@ export function QuizBuilder({
   onDirtyChange,
   onCreated,
   onReload,
+  onClose,
 }: {
   courseId: string;
   moduleId: string;
@@ -84,6 +85,8 @@ export function QuizBuilder({
   onCreated?: (contentItemId: string) => void;
   // Fetches the quiz again, after a CONFLICT.
   onReload: () => void;
+  // Shows a Close button beside Save, for a builder in a dialog.
+  onClose?: () => void;
 }) {
   const { course, contentItem } = useInstructorApi();
   const queryClient = useQueryClient();
@@ -508,7 +511,7 @@ export function QuizBuilder({
         </div>
       </div>
 
-      {!readOnly && (
+      {(!readOnly || onClose) && (
         <div className="sticky bottom-0 space-y-3 border-t bg-background/95 py-4 backdrop-blur">
           {showProblems && errors.quiz.length > 0 && (
             <Alert type="error" header="Fix these before saving">
@@ -556,9 +559,16 @@ export function QuizBuilder({
             <span className="text-sm text-muted-foreground" role="status">
               {justSaved ? 'Saved' : dirty ? 'Unsaved changes' : ''}
             </span>
-            <Button type="button" disabled={saving} onClick={save}>
-              <Save /> {saving ? 'Saving...' : 'Save quiz'}
-            </Button>
+            {onClose && (
+              <Button type="button" variant="outline" onClick={onClose}>
+                Close
+              </Button>
+            )}
+            {!readOnly && (
+              <Button type="button" disabled={saving} onClick={save}>
+                <Save /> {saving ? 'Saving...' : 'Save quiz'}
+              </Button>
+            )}
           </div>
         </div>
       )}

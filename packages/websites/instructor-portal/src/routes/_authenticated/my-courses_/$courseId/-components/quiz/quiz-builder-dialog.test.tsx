@@ -103,6 +103,9 @@ describe('QuizBuilderDialog', () => {
       await screen.findByText(/This quiz is archived/),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /save quiz/i })).toBeNull();
+    // Only Close is offered, and it closes the dialog.
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('closes straight away with nothing unsaved', async () => {
@@ -112,6 +115,21 @@ describe('QuizBuilderDialog', () => {
     await user.keyboard('{Escape}');
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('closes from the Close button, asking first if there are unsaved changes', async () => {
+    const { user } = renderDialog();
+
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Draft');
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    expect(
+      screen.getByRole('alertdialog', { name: 'Discard unsaved changes?' }),
+    ).toBeInTheDocument();
   });
 
   it('asks before discarding unsaved changes, and starts a new quiz afresh', async () => {

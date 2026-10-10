@@ -81,6 +81,15 @@ export function QuizBuilderDialog({
             ? 'This quiz is archived. Restore it from the course page to edit it.'
             : undefined;
 
+  // Closing with unsaved changes asks first.
+  const requestClose = () => {
+    if (dirty) {
+      setConfirmDiscard(true);
+    } else {
+      close();
+    }
+  };
+
   const close = () => {
     setConfirmDiscard(false);
     setDirty(false);
@@ -95,15 +104,18 @@ export function QuizBuilderDialog({
           setCreatedId(undefined);
           setSession((count) => count + 1);
           setOpen(true);
-        } else if (dirty) {
-          setConfirmDiscard(true);
         } else {
-          close();
+          requestClose();
         }
       }}
     >
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto pb-0 sm:max-w-5xl">
+      {/* Closed from the footer's Close, which stays in view while the
+          dialog scrolls, or Escape. */}
+      <DialogContent
+        showCloseButton={false}
+        className="max-h-[90vh] overflow-y-auto pb-0 sm:max-w-5xl"
+      >
         <DialogHeader>
           <DialogTitle>
             {contentItemId ? `Edit ${quiz?.title ?? 'quiz'}` : 'New quiz'}
@@ -137,6 +149,7 @@ export function QuizBuilderDialog({
             studentActivityCount={item?.studentActivityCount ?? 0}
             readOnlyReason={readOnlyReason}
             onDirtyChange={setDirty}
+            onClose={requestClose}
             onCreated={setCreatedId}
             onReload={async () => {
               await courseQuery.refetch();
