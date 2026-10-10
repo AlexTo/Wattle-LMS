@@ -93,7 +93,7 @@ export function QuizBuilderDialog({
       }}
     >
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto pb-0 sm:max-w-4xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto pb-0 sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>
             {contentItemId ? `Edit ${quiz?.title ?? 'quiz'}` : 'New quiz'}

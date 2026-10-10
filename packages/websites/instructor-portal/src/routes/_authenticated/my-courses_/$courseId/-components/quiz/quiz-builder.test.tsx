@@ -397,6 +397,54 @@ describe('QuizBuilder', () => {
     ).toBeInTheDocument();
   });
 
+  it('lists the questions in a contents panel, opening the one clicked', async () => {
+    const { user } = renderExisting();
+    const contents = screen.getByRole('navigation', { name: 'Quiz contents' });
+
+    expect(
+      within(contents)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Settings', 'Question 1First?', 'Question 2Second?']);
+    expect(
+      within(contents).getByRole('button', { name: /^Question 1/ }),
+    ).toHaveAttribute('aria-current', 'true');
+
+    await user.click(
+      within(contents).getByRole('button', { name: /^Question 2/ }),
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Collapse Question 2' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Expand Question 1' }),
+    ).toBeInTheDocument();
+    expect(
+      within(contents).getByRole('button', { name: /^Question 2/ }),
+    ).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('marks the questions that need fixing in the contents panel', async () => {
+    const quiz = {
+      ...existing,
+      answerKey: { ...existing.answerKey, q2: { correctOptionIds: [] } },
+    };
+    const { user } = renderExisting({}, { quiz });
+    const contents = screen.getByRole('navigation', { name: 'Quiz contents' });
+
+    await user.click(save());
+
+    expect(
+      within(contents).getByRole('button', {
+        name: /^Question 2.*needs fixing/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(contents).getByRole('button', { name: /^Question 1/ }),
+    ).not.toHaveTextContent('needs fixing');
+  });
+
   it('warns that students have attempted the quiz', () => {
     renderExisting({}, { studentActivityCount: 3 });
 

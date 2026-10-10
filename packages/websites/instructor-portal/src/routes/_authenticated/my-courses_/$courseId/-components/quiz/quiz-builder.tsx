@@ -6,6 +6,7 @@
 import { Button } from '@discava/common-shadcn/components/ui/button';
 import { Input } from '@discava/common-shadcn/components/ui/input';
 import { Textarea } from '@discava/common-shadcn/components/ui/textarea';
+import { cn } from '@discava/common-shadcn/lib/utils';
 import { move } from '@dnd-kit/helpers';
 import { DragDropProvider, type DragEndEvent } from '@dnd-kit/react';
 import { useSortable } from '@dnd-kit/react/sortable';
@@ -21,6 +22,7 @@ import {
   MAX_QUESTIONS,
   newQuestion,
   newQuiz,
+  plainText,
   type QuestionState,
   type QuizItem,
   type QuizState,
@@ -83,6 +85,8 @@ export function QuizBuilder({
     initial.questions[0]?.questionId,
   );
   const [showProblems, setShowProblems] = useState(false);
+  // The question (or 'settings') to scroll to once it has rendered open.
+  const [scrollTarget, setScrollTarget] = useState<string>();
   const [justSaved, setJustSaved] = useState(false);
   const createQuiz = useMutation(contentItem.createQuiz.mutationOptions());
   const updateQuiz = useMutation(contentItem.updateQuiz.mutationOptions());
@@ -106,6 +110,23 @@ export function QuizBuilder({
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty, readOnly]);
+
+  useEffect(() => {
+    if (!scrollTarget) {
+      return;
+    }
+    document
+      .getElementById(sectionId(scrollTarget))
+      // jsdom has no scrollIntoView.
+      ?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    setScrollTarget(undefined);
+  }, [scrollTarget]);
+
+  // Opens a question (collapsing the open one) and scrolls to it.
+  const jumpTo = (questionId: string) => {
+    setExpanded(questionId);
+    setScrollTarget(questionId);
+  };
 
   const change = (next: Partial<QuizState>) => {
     setJustSaved(false);
@@ -197,182 +218,245 @@ export function QuizBuilder({
         </Alert>
       )}
 
-      <section
-        aria-labelledby="quiz-settings"
-        className="space-y-4 rounded-xl border bg-card p-5"
-      >
-        <h2 id="quiz-settings" className="text-lg font-semibold">
-          Settings
-        </h2>
-        <fieldset disabled={readOnly} className="grid gap-4 sm:grid-cols-2">
-          <label className="space-y-1.5 sm:col-span-2">
-            <span className="text-sm font-medium">Title</span>
-            <Input
-              value={quiz.title}
-              onChange={(event) => change({ title: event.target.value })}
-              maxLength={200}
-            />
-          </label>
-          <label className="space-y-1.5 sm:col-span-2">
-            <span className="text-sm font-medium">Description (optional)</span>
-            <Textarea
-              value={quiz.description}
-              onChange={(event) => change({ description: event.target.value })}
-              rows={2}
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-sm font-medium">Pass mark (%)</span>
-            <Input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={
-                Number.isNaN(quiz.settings.passMarkPercent)
-                  ? ''
-                  : quiz.settings.passMarkPercent
-              }
-              onChange={(event) =>
-                changeSettings({ passMarkPercent: event.target.valueAsNumber })
-              }
-            />
-          </label>
-          <div className="space-y-1.5">
-            <span className="text-sm font-medium">Attempts allowed</span>
-            <div className="flex items-center gap-3">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={quiz.settings.attemptsAllowed === null}
+      <div className="sm:grid sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-6">
+        <nav
+          aria-label="Quiz contents"
+          className="sticky top-0 hidden max-h-[calc(90vh-3rem)] self-start overflow-y-auto sm:block"
+        >
+          <ol className="space-y-0.5 text-sm">
+            <li>
+              <button
+                type="button"
+                onClick={() => setScrollTarget('settings')}
+                className="w-full rounded-md px-2 py-1.5 text-left font-medium hover:bg-muted"
+              >
+                Settings
+              </button>
+            </li>
+            {quiz.questions.map((question, index) => {
+              const needsFixing =
+                showProblems && Boolean(errors.questions[question.questionId]);
+              return (
+                <li key={question.questionId}>
+                  <button
+                    type="button"
+                    aria-current={
+                      expanded === question.questionId ? 'true' : undefined
+                    }
+                    onClick={() => jumpTo(question.questionId)}
+                    className={cn(
+                      'flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted',
+                      expanded === question.questionId && 'bg-muted',
+                    )}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-semibold">
+                        Question {index + 1}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {plainText(question.prompt) ||
+                          'No question written yet'}
+                      </span>
+                    </span>
+                    {needsFixing && (
+                      <span className="mt-1 size-2 shrink-0 rounded-full bg-destructive">
+                        <span className="sr-only">(needs fixing)</span>
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+
+        <div className="min-w-0 space-y-6">
+          <section
+            id={sectionId('settings')}
+            aria-labelledby="quiz-settings"
+            className="scroll-mt-4 space-y-4 rounded-xl border bg-card p-5"
+          >
+            <h2 id="quiz-settings" className="text-lg font-semibold">
+              Settings
+            </h2>
+            <fieldset disabled={readOnly} className="grid gap-4 sm:grid-cols-2">
+              <label className="space-y-1.5 sm:col-span-2">
+                <span className="text-sm font-medium">Title</span>
+                <Input
+                  value={quiz.title}
+                  onChange={(event) => change({ title: event.target.value })}
+                  maxLength={200}
+                />
+              </label>
+              <label className="space-y-1.5 sm:col-span-2">
+                <span className="text-sm font-medium">
+                  Description (optional)
+                </span>
+                <Textarea
+                  value={quiz.description}
+                  onChange={(event) =>
+                    change({ description: event.target.value })
+                  }
+                  rows={2}
+                />
+              </label>
+              <label className="space-y-1.5">
+                <span className="text-sm font-medium">Pass mark (%)</span>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={
+                    Number.isNaN(quiz.settings.passMarkPercent)
+                      ? ''
+                      : quiz.settings.passMarkPercent
+                  }
                   onChange={(event) =>
                     changeSettings({
-                      attemptsAllowed: event.target.checked ? null : 3,
+                      passMarkPercent: event.target.valueAsNumber,
                     })
+                  }
+                />
+              </label>
+              <div className="space-y-1.5">
+                <span className="text-sm font-medium">Attempts allowed</span>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={quiz.settings.attemptsAllowed === null}
+                      onChange={(event) =>
+                        changeSettings({
+                          attemptsAllowed: event.target.checked ? null : 3,
+                        })
+                      }
+                      className="size-4 accent-primary"
+                    />
+                    Unlimited
+                  </label>
+                  {quiz.settings.attemptsAllowed !== null && (
+                    <Input
+                      type="number"
+                      min={1}
+                      step={1}
+                      aria-label="Number of attempts"
+                      className="w-24"
+                      value={
+                        Number.isNaN(quiz.settings.attemptsAllowed)
+                          ? ''
+                          : quiz.settings.attemptsAllowed
+                      }
+                      onChange={(event) =>
+                        changeSettings({
+                          attemptsAllowed: event.target.valueAsNumber,
+                        })
+                      }
+                    />
+                  )}
+                </div>
+              </div>
+              <label className="space-y-1.5">
+                <span className="text-sm font-medium">
+                  Show the correct answers
+                </span>
+                <select
+                  value={quiz.settings.revealAnswers}
+                  onChange={(event) =>
+                    changeSettings({
+                      revealAnswers: event.target.value as RevealAnswers,
+                    })
+                  }
+                  className="block h-9 w-full rounded-md border bg-background px-3 text-sm"
+                >
+                  {Object.entries(REVEAL_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-2 self-end text-sm">
+                <input
+                  type="checkbox"
+                  checked={quiz.settings.shuffleOptions}
+                  onChange={(event) =>
+                    changeSettings({ shuffleOptions: event.target.checked })
                   }
                   className="size-4 accent-primary"
                 />
-                Unlimited
+                Shuffle the options for each student
               </label>
-              {quiz.settings.attemptsAllowed !== null && (
-                <Input
-                  type="number"
-                  min={1}
-                  step={1}
-                  aria-label="Number of attempts"
-                  className="w-24"
-                  value={
-                    Number.isNaN(quiz.settings.attemptsAllowed)
-                      ? ''
-                      : quiz.settings.attemptsAllowed
-                  }
-                  onChange={(event) =>
-                    changeSettings({
-                      attemptsAllowed: event.target.valueAsNumber,
-                    })
-                  }
-                />
-              )}
-            </div>
-          </div>
-          <label className="space-y-1.5">
-            <span className="text-sm font-medium">
-              Show the correct answers
-            </span>
-            <select
-              value={quiz.settings.revealAnswers}
-              onChange={(event) =>
-                changeSettings({
-                  revealAnswers: event.target.value as RevealAnswers,
-                })
-              }
-              className="block h-9 w-full rounded-md border bg-background px-3 text-sm"
-            >
-              {Object.entries(REVEAL_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-2 self-end text-sm">
-            <input
-              type="checkbox"
-              checked={quiz.settings.shuffleOptions}
-              onChange={(event) =>
-                changeSettings({ shuffleOptions: event.target.checked })
-              }
-              className="size-4 accent-primary"
-            />
-            Shuffle the options for each student
-          </label>
-        </fieldset>
-      </section>
+            </fieldset>
+          </section>
 
-      <section aria-labelledby="quiz-questions" className="space-y-3">
-        <h2 id="quiz-questions" className="text-lg font-semibold">
-          Questions ({quiz.questions.length})
-        </h2>
-        <DragDropProvider onDragEnd={onDragEnd}>
-          <ol className="space-y-3">
-            {quiz.questions.map((question, index) => (
-              <SortableQuestion
-                key={question.questionId}
-                id={question.questionId}
-                index={index}
-                label={`Question ${index + 1}`}
-                disabled={readOnly || quiz.questions.length < 2}
+          <section aria-labelledby="quiz-questions" className="space-y-3">
+            <h2 id="quiz-questions" className="text-lg font-semibold">
+              Questions ({quiz.questions.length})
+            </h2>
+            <DragDropProvider onDragEnd={onDragEnd}>
+              <ol className="space-y-3">
+                {quiz.questions.map((question, index) => (
+                  <SortableQuestion
+                    key={question.questionId}
+                    id={question.questionId}
+                    elementId={sectionId(question.questionId)}
+                    index={index}
+                    label={`Question ${index + 1}`}
+                    disabled={readOnly || quiz.questions.length < 2}
+                  >
+                    {(handle) => (
+                      <QuestionCard
+                        question={question}
+                        number={index + 1}
+                        expanded={expanded === question.questionId}
+                        onToggle={() =>
+                          setExpanded((current) =>
+                            current === question.questionId
+                              ? undefined
+                              : question.questionId,
+                          )
+                        }
+                        onChange={changeQuestion}
+                        onRemove={() =>
+                          change({
+                            questions: quiz.questions.filter(
+                              ({ questionId }) =>
+                                questionId !== question.questionId,
+                            ),
+                          })
+                        }
+                        canRemove={quiz.questions.length > 1}
+                        problems={
+                          showProblems
+                            ? (errors.questions[question.questionId] ?? [])
+                            : []
+                        }
+                        readOnly={readOnly}
+                        handle={handle}
+                      />
+                    )}
+                  </SortableQuestion>
+                ))}
+              </ol>
+            </DragDropProvider>
+            {!readOnly && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={quiz.questions.length >= MAX_QUESTIONS}
+                onClick={() => {
+                  const question = newQuestion();
+                  change({ questions: [...quiz.questions, question] });
+                  jumpTo(question.questionId);
+                }}
               >
-                {(handle) => (
-                  <QuestionCard
-                    question={question}
-                    number={index + 1}
-                    expanded={expanded === question.questionId}
-                    onToggle={() =>
-                      setExpanded((current) =>
-                        current === question.questionId
-                          ? undefined
-                          : question.questionId,
-                      )
-                    }
-                    onChange={changeQuestion}
-                    onRemove={() =>
-                      change({
-                        questions: quiz.questions.filter(
-                          ({ questionId }) =>
-                            questionId !== question.questionId,
-                        ),
-                      })
-                    }
-                    canRemove={quiz.questions.length > 1}
-                    problems={
-                      showProblems
-                        ? (errors.questions[question.questionId] ?? [])
-                        : []
-                    }
-                    readOnly={readOnly}
-                    handle={handle}
-                  />
-                )}
-              </SortableQuestion>
-            ))}
-          </ol>
-        </DragDropProvider>
-        {!readOnly && (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={quiz.questions.length >= MAX_QUESTIONS}
-            onClick={() => {
-              const question = newQuestion();
-              change({ questions: [...quiz.questions, question] });
-              setExpanded(question.questionId);
-            }}
-          >
-            <CirclePlus /> Add question
-          </Button>
-        )}
-      </section>
+                <CirclePlus /> Add question
+              </Button>
+            )}
+          </section>
+        </div>
+      </div>
 
       {!readOnly && (
         <div className="sticky bottom-0 space-y-3 border-t bg-background/95 py-4 backdrop-blur">
@@ -432,14 +516,19 @@ export function QuizBuilder({
   );
 }
 
+// The element id a contents link scrolls to.
+const sectionId = (target: string) => `quiz-section-${target}`;
+
 function SortableQuestion({
   id,
+  elementId,
   index,
   label,
   disabled,
   children,
 }: {
   id: string;
+  elementId: string;
   index: number;
   label: string;
   disabled: boolean;
@@ -450,7 +539,7 @@ function SortableQuestion({
   // without one, dnd-kit makes the whole card the drag source, a (disabled)
   // button to assistive tech, with every field inside it.
   return (
-    <li ref={ref}>
+    <li ref={ref} id={elementId} className="scroll-mt-4">
       {children(
         <QuestionHandle
           label={label}
