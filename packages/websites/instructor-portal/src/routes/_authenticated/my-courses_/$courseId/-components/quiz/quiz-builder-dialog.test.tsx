@@ -121,7 +121,7 @@ describe('QuizBuilderDialog', () => {
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Draft');
     await user.keyboard('{Escape}');
 
-    const confirm = screen.getByRole('dialog', {
+    const confirm = screen.getByRole('alertdialog', {
       name: 'Discard unsaved changes?',
     });
     await user.click(

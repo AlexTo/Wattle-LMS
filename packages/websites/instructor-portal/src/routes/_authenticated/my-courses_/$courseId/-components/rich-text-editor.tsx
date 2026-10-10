@@ -4,6 +4,7 @@
  */
 
 import { Toggle } from '@discava/common-shadcn/components/ui/toggle';
+import { cn } from '@discava/common-shadcn/lib/utils';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Bold, Heading2, Italic, List, ListOrdered } from 'lucide-react';
