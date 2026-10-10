@@ -147,6 +147,10 @@ export class CoreApi<
           handler,
           integration: new LambdaIntegration(handler, {
             responseTransferMode: ResponseTransferMode.STREAM,
+            // Skips the extra per-method Lambda::Permission for the console's
+            // test-invoke-stage, which nothing uses and counts toward the
+            // 500-resource CloudFormation limit.
+            allowTestInvoke: false,
           }),
           options: PUBLIC_OPERATIONS.has(op)
             ? { authorizationType: AuthorizationType.NONE }
