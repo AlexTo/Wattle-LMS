@@ -90,6 +90,13 @@ export interface RestApiProps<
    * @default true
    */
   readonly enableKeyRotation?: boolean;
+  /**
+   * What happens to the access log group (and its KMS key, if any) when it's
+   * removed from the stack or the stack is deleted.
+   *
+   * @default RemovalPolicy.RETAIN
+   */
+  readonly removalPolicy?: RemovalPolicy;
 }
 
 /**
@@ -127,6 +134,7 @@ export class RestApi<
       throttle = { rateLimit: 10000, burstLimit: 5000 },
       enableKmsEncryption = true,
       enableKeyRotation = true,
+      removalPolicy = RemovalPolicy.RETAIN,
       domainName,
       ...props
     }: RestApiProps<TIntegrations, TOperation>,
@@ -139,7 +147,7 @@ export class RestApi<
 
     // KMS key for encrypting logs at rest, usable by CloudWatch Logs
     const logsKey = enableKmsEncryption
-      ? new Key(this, 'LogsKey', { enableKeyRotation })
+      ? new Key(this, 'LogsKey', { enableKeyRotation, removalPolicy })
       : undefined;
     logsKey?.grantEncryptDecrypt(
       new ServicePrincipal(`logs.${Stack.of(this).region}.amazonaws.com`),
@@ -148,6 +156,7 @@ export class RestApi<
     const accessLogs = new LogGroup(this, 'AccessLogs', {
       retention: RetentionDays.ONE_YEAR,
       encryptionKey: logsKey,
+      removalPolicy,
     });
 
     // Create the API Gateway REST API

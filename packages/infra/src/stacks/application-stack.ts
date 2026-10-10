@@ -137,6 +137,11 @@ export class ApplicationStack extends Stack {
     const identity = new UserIdentity(this, 'Identity', {
       enableWaf: identityConfig?.enableWaf ?? true,
       mfa: (identityConfig?.enableMfa ?? true) ? Mfa.REQUIRED : Mfa.OFF,
+      deletionProtection: identityConfig?.enableDeletionProtection ?? true,
+      removalPolicy:
+        (identityConfig?.retainOnDelete ?? true)
+          ? RemovalPolicy.RETAIN
+          : RemovalPolicy.DESTROY,
     });
 
     // Adds every self-signed-up user to the `student` group
@@ -176,6 +181,10 @@ export class ApplicationStack extends Stack {
         : TableEncryption.DEFAULT,
       enableKeyRotation: coreTableConfig?.enableKeyRotation ?? true,
       deletionProtection: coreTableConfig?.enableDeletionProtection ?? true,
+      removalPolicy:
+        (coreTableConfig?.retainOnDelete ?? true)
+          ? RemovalPolicy.RETAIN
+          : RemovalPolicy.DESTROY,
     });
     if (!coreTableKmsEnabled) {
       suppressRules(
@@ -208,6 +217,10 @@ export class ApplicationStack extends Stack {
       enableWaf: coreApiConfig?.enableWaf ?? true,
       enableKmsEncryption: coreApiKmsEnabled,
       enableKeyRotation: coreApiConfig?.enableKeyRotation ?? true,
+      removalPolicy:
+        (coreApiConfig?.retainOnDelete ?? true)
+          ? RemovalPolicy.RETAIN
+          : RemovalPolicy.DESTROY,
       domainName: coreApiConfig?.domainName,
       certificate: coreApiCertificate,
     });
@@ -253,6 +266,10 @@ export class ApplicationStack extends Stack {
       enableWaf: instructorApiWafEnabled,
       enableKmsEncryption: instructorApiKmsEnabled,
       enableKeyRotation: instructorApiConfig?.enableKeyRotation ?? true,
+      removalPolicy:
+        (instructorApiConfig?.retainOnDelete ?? true)
+          ? RemovalPolicy.RETAIN
+          : RemovalPolicy.DESTROY,
       domainName: instructorApiConfig?.domainName,
       certificate: instructorApiCertificate,
     });
