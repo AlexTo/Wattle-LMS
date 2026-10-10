@@ -17,6 +17,7 @@ import {
   ViewCourseInputSchema,
   ViewCourseOutputSchema,
 } from '../schema/index.js';
+import { getEnrolment } from './enrolment.js';
 
 export const listCoursesByInstructor = courseProcedure
   .input(ListCoursesByInstructorInputSchema)
@@ -147,12 +148,26 @@ export const viewCourse = courseProcedure
     // @discava/core-table's service.ts), so one query returns the whole
     // curriculum instead of a get plus per-module/per-lesson queries.
     // Every page: a course's curriculum can exceed a single 1 MB query page.
-    const { data } = await coreTable.collections
-      .curriculum({ courseId: input.courseId })
-      .go({ pages: 'all' });
+    const [{ data }, enrolment] = await Promise.all([
+      coreTable.collections
+        .curriculum({ courseId: input.courseId })
+        .go({ pages: 'all' }),
+      getEnrolment(coreTable, input.courseId, ctx.user.sub),
+    ]);
     const [course] = data.course;
     if (!course) {
       throw new TRPCError({ code: 'NOT_FOUND' });
+    }
+    // Only enrolled students read a course's content, including after it's
+    // archived. Anyone else learns only that a published course exists, which
+    // publicView shows them anyway; a draft or archived course is NOT_FOUND,
+    // so its existence isn't leaked.
+    if (!enrolment || enrolment.status === 'dropped') {
+      throw new TRPCError(
+        course.status === 'published'
+          ? { code: 'FORBIDDEN', message: 'Enrol in the course to view it' }
+          : { code: 'NOT_FOUND' },
+      );
     }
     // Students only see a module, lesson or content item that is visible, not
     // archived, and not under a hidden or archived ancestor. Instructors edit
