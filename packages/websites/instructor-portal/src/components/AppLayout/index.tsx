@@ -31,10 +31,11 @@ const segmentLabels: Record<string, string> = {
   'my-courses': 'My Courses',
 };
 
-const getBreadcrumbs = (
+// A crumb links to its own path only: the current page's search params (a new
+// quiz's lesson, say) mean nothing to the pages above it.
+export const getBreadcrumbs = (
   matchRoute: ReturnType<typeof useMatchRoute>,
   pathName: string,
-  search: string,
   defaultBreadcrumb: string,
   overrides: Record<string, string>,
   availableRoutes?: string[],
@@ -57,7 +58,7 @@ const getBreadcrumbs = (
       !availableRoutes || availableRoutes.find((r) => matchRoute({ to: href }));
 
     return {
-      href: matched ? `${href}${search}` : '#',
+      href: matched ? href : '#',
       text: overrides[href] ?? segmentLabels[segment] ?? segment,
     };
   });
@@ -68,7 +69,7 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
     { href: string; text: string }[]
   >([{ text: '/', href: '/' }]);
   const matchRoute = useMatchRoute();
-  const { pathname, search } = useLocation();
+  const { pathname } = useLocation();
   const [overrides, setOverrides] = React.useState<Record<string, string>>({});
 
   const setOverride = React.useCallback(
@@ -94,15 +95,9 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
   );
 
   React.useEffect(() => {
-    const breadcrumbs = getBreadcrumbs(
-      matchRoute,
-      pathname,
-      Object.entries(search).reduce((p, [k, v]) => p + `${k}=${v}`, ''),
-      '/',
-      overrides,
-    );
+    const breadcrumbs = getBreadcrumbs(matchRoute, pathname, '/', overrides);
     setActiveBreadcrumbs(breadcrumbs);
-  }, [matchRoute, pathname, search, overrides]);
+  }, [matchRoute, pathname, overrides]);
 
   return (
     <BreadcrumbOverrideContext.Provider value={breadcrumbOverrideContextValue}>
