@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { AppRouter, appRouter } from '@discava/core-api';
-import { Aspects, Duration } from 'aws-cdk-lib';
+import { Aspects, Duration, RemovalPolicy } from 'aws-cdk-lib';
 import {
   AuthorizationType,
   CognitoUserPoolsAuthorizer,
@@ -89,6 +89,13 @@ export interface CoreApiProps<
    * @default true
    */
   enableKeyRotation?: boolean;
+  /**
+   * What happens to the access log group (and its KMS key, if any) when it's
+   * removed from the stack or the stack is deleted.
+   *
+   * @default RemovalPolicy.RETAIN
+   */
+  removalPolicy?: RemovalPolicy;
   /**
    * Custom domain name for the API Gateway REST API. Requires `certificate`.
    */

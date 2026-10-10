@@ -25,6 +25,8 @@ const COMPONENT_FIELDS: Record<
   identity: {
     enableWaf: 'boolean',
     enableMfa: 'boolean',
+    enableDeletionProtection: 'boolean',
+    retainOnDelete: 'boolean',
   },
   coreApi: {
     enableWaf: 'boolean',
@@ -32,6 +34,7 @@ const COMPONENT_FIELDS: Record<
     enableKeyRotation: 'boolean',
     domainName: 'string',
     certificateArn: 'string',
+    retainOnDelete: 'boolean',
   },
   instructorApi: {
     enableWaf: 'boolean',
@@ -39,11 +42,13 @@ const COMPONENT_FIELDS: Record<
     enableKeyRotation: 'boolean',
     domainName: 'string',
     certificateArn: 'string',
+    retainOnDelete: 'boolean',
   },
   coreTable: {
     enableKmsEncryption: 'boolean',
     enableKeyRotation: 'boolean',
     enableDeletionProtection: 'boolean',
+    retainOnDelete: 'boolean',
   },
   studentPortal: {
     enableWaf: 'boolean',

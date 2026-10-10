@@ -87,6 +87,21 @@ export interface UserIdentityProps {
    * @default { sms: true, otp: true }
    */
   readonly mfaSecondFactor?: MfaSecondFactor;
+
+  /**
+   * What happens to the user pool when it's removed from the stack or the
+   * stack is deleted.
+   *
+   * @default RemovalPolicy.RETAIN
+   */
+  readonly removalPolicy?: RemovalPolicy;
+
+  /**
+   * Prevent the user pool from being deleted while this is enabled.
+   *
+   * @default true
+   */
+  readonly deletionProtection?: boolean;
 }
 
 /**
@@ -110,12 +125,19 @@ export class UserIdentity extends Construct {
       enableWaf = true,
       mfa = Mfa.REQUIRED,
       mfaSecondFactor = { sms: true, otp: true },
+      removalPolicy = RemovalPolicy.RETAIN,
+      deletionProtection = true,
     }: UserIdentityProps = {},
   ) {
     super(scope, id);
 
     this.region = Stack.of(this).region;
-    this.userPool = this.createUserPool(mfa, mfaSecondFactor);
+    this.userPool = this.createUserPool(
+      mfa,
+      mfaSecondFactor,
+      removalPolicy,
+      deletionProtection,
+    );
     this.userPoolGroups = this.createUserPoolGroups(this.userPool);
 
     if (enableWaf) {
@@ -164,9 +186,15 @@ export class UserIdentity extends Construct {
     });
   }
 
-  private createUserPool = (mfa: Mfa, mfaSecondFactor: MfaSecondFactor) => {
+  private createUserPool = (
+    mfa: Mfa,
+    mfaSecondFactor: MfaSecondFactor,
+    removalPolicy: RemovalPolicy,
+    deletionProtection: boolean,
+  ) => {
     const userPool = new UserPool(this, 'UserPool', {
-      deletionProtection: true,
+      removalPolicy,
+      deletionProtection,
       passwordPolicy: {
         minLength: 8,
         requireLowercase: true,

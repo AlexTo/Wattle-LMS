@@ -77,7 +77,7 @@ export abstract class DynamoDBTable extends Construct {
     const key: IKey | undefined =
       encryption === TableEncryption.CUSTOMER_MANAGED
         ? (encryptionKey ??
-          new Key(this, 'EncryptionKey', { enableKeyRotation }))
+          new Key(this, 'EncryptionKey', { enableKeyRotation, removalPolicy }))
         : undefined;
 
     this.table = new Table(this, runtimeConfigKey, {

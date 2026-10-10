@@ -37,12 +37,26 @@ export default {
         // credentials and CDK_DEFAULT_REGION until these are configured.
         'discava-development': {
           infra: {
-            identity: { enableWaf: false, enableMfa: false },
-            coreApi: { enableWaf: false, enableKmsEncryption: false },
-            instructorApi: { enableWaf: false, enableKmsEncryption: false },
+            identity: {
+              enableWaf: false,
+              enableMfa: false,
+              enableDeletionProtection: false,
+              retainOnDelete: false,
+            },
+            coreApi: {
+              enableWaf: false,
+              enableKmsEncryption: false,
+              retainOnDelete: false,
+            },
+            instructorApi: {
+              enableWaf: false,
+              enableKmsEncryption: false,
+              retainOnDelete: false,
+            },
             coreTable: {
               enableKmsEncryption: false,
               enableDeletionProtection: false,
+              retainOnDelete: false,
             },
             studentPortal: { enableWaf: false, enableKmsEncryption: false },
             instructorPortal: { enableWaf: false, enableKmsEncryption: false },
@@ -56,21 +70,29 @@ export default {
         },
         'discava-production': {
           infra: {
-            identity: { enableWaf: true, enableMfa: true },
+            identity: {
+              enableWaf: true,
+              enableMfa: true,
+              enableDeletionProtection: true,
+              retainOnDelete: true,
+            },
             coreApi: {
               enableWaf: true,
               enableKmsEncryption: true,
               enableKeyRotation: true,
+              retainOnDelete: true,
             },
             instructorApi: {
               enableWaf: true,
               enableKmsEncryption: true,
               enableKeyRotation: true,
+              retainOnDelete: true,
             },
             coreTable: {
               enableKmsEncryption: true,
               enableKeyRotation: true,
               enableDeletionProtection: true,
+              retainOnDelete: true,
             },
             studentPortal: {
               enableWaf: true,

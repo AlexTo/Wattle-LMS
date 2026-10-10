@@ -37,6 +37,15 @@ export type IdentityComponentConfig = {
   enableWaf?: boolean;
   /** Require MFA on the Cognito user pool */
   enableMfa?: boolean;
+  /** Prevent the user pool from being deleted while the stack is deployed */
+  enableDeletionProtection?: boolean;
+  /**
+   * Retain the user pool (and every user in it) when the stack is deleted,
+   * instead of destroying it along with the stack.
+   *
+   * @default true
+   */
+  retainOnDelete?: boolean;
 };
 
 /**
@@ -53,6 +62,13 @@ export type CoreApiComponentConfig = {
   domainName?: string;
   /** ACM certificate ARN for the custom domain name. Must be in the same region as the API. */
   certificateArn?: string;
+  /**
+   * Retain the API's access log group (and its KMS key, if any) when the
+   * stack is deleted, instead of destroying it along with the stack.
+   *
+   * @default true
+   */
+  retainOnDelete?: boolean;
 };
 
 /**
@@ -69,6 +85,13 @@ export type InstructorApiComponentConfig = {
   domainName?: string;
   /** ACM certificate ARN for the custom domain name. Must be in the same region as the API. */
   certificateArn?: string;
+  /**
+   * Retain the API's access log group (and its KMS key, if any) when the
+   * stack is deleted, instead of destroying it along with the stack.
+   *
+   * @default true
+   */
+  retainOnDelete?: boolean;
 };
 
 /**
@@ -81,6 +104,13 @@ export type CoreTableComponentConfig = {
   enableKeyRotation?: boolean;
   /** Prevent the table from being deleted while the stack is deployed */
   enableDeletionProtection?: boolean;
+  /**
+   * Retain the table (and its KMS key, if any) when the stack is deleted,
+   * instead of destroying it and all its data along with the stack.
+   *
+   * @default true
+   */
+  retainOnDelete?: boolean;
 };
 
 /**
