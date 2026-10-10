@@ -3,6 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import {
+  AlertDescription,
+  Alert as ShadcnAlert,
+} from '@discava/common-shadcn/components/ui/alert';
 import { Badge } from '@discava/common-shadcn/components/ui/badge';
 import { Button } from '@discava/common-shadcn/components/ui/button';
 import {
@@ -133,7 +137,7 @@ function RouteComponent() {
   return (
     <main className="mx-auto w-full max-w-5xl space-y-6 pb-10">
       <section>
-        <div className="rounded-xl border bg-card p-5 shadow-sm sm:p-6">
+        <Card className="gap-0 p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <Badge className={courseStatusStyles[status]}>{status}</Badge>
@@ -160,17 +164,20 @@ function RouteComponent() {
               })}
             </span>
           </div>
-        </div>
+        </Card>
       </section>
 
       {readOnly && (
-        <div
+        <ShadcnAlert
           role="status"
-          className="flex items-start gap-2 rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground"
+          className="bg-muted/30 text-muted-foreground"
         >
-          <Info className="mt-0.5 size-4 shrink-0" /> This course is archived,
-          so it can't be edited. Restore it to make changes.
-        </div>
+          <Info />
+          <AlertDescription>
+            This course is archived, so it can't be edited. Restore it to make
+            changes.
+          </AlertDescription>
+        </ShadcnAlert>
       )}
 
       <section aria-labelledby="content-heading" className="space-y-4">

@@ -70,15 +70,17 @@ function SortableContentItem({
       )}
     >
       {children(
-        <button
+        <Button
           ref={handleRef}
           type="button"
+          variant="ghost"
+          size="icon-xs"
           aria-label={`Reorder ${title}`}
           disabled={disabled}
-          className="-ml-1 flex size-6 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring active:cursor-grabbing disabled:cursor-not-allowed"
+          className="-ml-1 cursor-grab touch-none text-muted-foreground hover:bg-transparent hover:text-foreground active:cursor-grabbing"
         >
           <GripVertical className="size-3.5" />
-        </button>,
+        </Button>,
       )}
     </div>
   );

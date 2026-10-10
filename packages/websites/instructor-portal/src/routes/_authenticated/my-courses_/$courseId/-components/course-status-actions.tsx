@@ -3,15 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Button } from '@discava/common-shadcn/components/ui/button';
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@discava/common-shadcn/components/ui/dialog';
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@discava/common-shadcn/components/ui/alert-dialog';
+import { Button } from '@discava/common-shadcn/components/ui/button';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { RotateCcw, Send } from 'lucide-react';
 import { useState } from 'react';
@@ -57,7 +59,7 @@ function PublishCourseDialog({
   } = useMutation(course.publish.mutationOptions());
 
   return (
-    <Dialog
+    <AlertDialog
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
@@ -66,20 +68,20 @@ function PublishCourseDialog({
         }
       }}
     >
-      <DialogTrigger asChild>
+      <AlertDialogTrigger asChild>
         <Button type="button">
           <Send /> Publish
         </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Publish course</DialogTitle>
-          <p className="text-sm text-muted-foreground">
+      </AlertDialogTrigger>
+      <AlertDialogContent className="sm:max-w-md">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Publish course</AlertDialogTitle>
+          <AlertDialogDescription>
             Students will be able to see "{title}" and everything in it. After
             this, removing a module, lesson or content item archives it instead
             of deleting it, and new content stays hidden until you publish it.
-          </p>
-        </DialogHeader>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
 
         {isError && (
           <Alert type="error" header="Couldn't publish the course">
@@ -87,14 +89,8 @@ function PublishCourseDialog({
           </Alert>
         )}
 
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setOpen(false)}
-          >
-            Cancel
-          </Button>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
           <Button
             type="button"
             disabled={isPending}
@@ -113,9 +109,9 @@ function PublishCourseDialog({
           >
             {isPending ? 'Publishing...' : 'Publish'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

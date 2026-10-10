@@ -13,6 +13,7 @@ import {
   DialogTrigger,
 } from '@discava/common-shadcn/components/ui/dialog';
 import { Input } from '@discava/common-shadcn/components/ui/input';
+import { Label } from '@discava/common-shadcn/components/ui/label';
 import { Textarea } from '@discava/common-shadcn/components/ui/textarea';
 import { useForm } from '@tanstack/react-form';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -105,12 +106,7 @@ export function CreateModuleDialog({
               const error = state.meta.errors[0];
               return (
                 <div className="space-y-2">
-                  <label
-                    className="text-sm font-medium leading-none"
-                    htmlFor={name}
-                  >
-                    Module title
-                  </label>
+                  <Label htmlFor={name}>Module title</Label>
                   <Input
                     id={name}
                     name={name}
@@ -132,12 +128,7 @@ export function CreateModuleDialog({
           <form.Field name="description">
             {({ name, state, handleBlur, handleChange }) => (
               <div className="space-y-2">
-                <label
-                  className="text-sm font-medium leading-none"
-                  htmlFor={name}
-                >
-                  Description
-                </label>
+                <Label htmlFor={name}>Description</Label>
                 <Textarea
                   id={name}
                   name={name}

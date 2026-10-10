@@ -3,15 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Button } from '@discava/common-shadcn/components/ui/button';
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@discava/common-shadcn/components/ui/dialog';
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@discava/common-shadcn/components/ui/alert-dialog';
+import { Button } from '@discava/common-shadcn/components/ui/button';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
 import { Alert } from '../../../../../components/alert';
@@ -50,7 +52,7 @@ export function DeleteLessonDialog({
   } = useMutation(lesson.delete.mutationOptions());
 
   return (
-    <Dialog
+    <AlertDialog
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
@@ -59,24 +61,24 @@ export function DeleteLessonDialog({
         }
       }}
     >
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
+      <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
+      <AlertDialogContent className="sm:max-w-md">
+        <AlertDialogHeader>
+          <AlertDialogTitle>
             {archive ? 'Archive lesson' : 'Delete lesson'}
-          </DialogTitle>
-          <p className="text-sm text-muted-foreground">
+          </AlertDialogTitle>
+          <AlertDialogDescription>
             {archive
               ? `Students will no longer see "${title}" or its content. Their progress and results are kept, and the lesson can be restored.`
               : `Are you sure you want to delete "${title}"? This can't be undone.`}
-          </p>
+          </AlertDialogDescription>
           {archive && studentActivityNote({ items: usedItems }) && (
             <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
               {studentActivityNote({ items: usedItems })}. Their progress is
               kept, and counts again if it's restored.
             </p>
           )}
-        </DialogHeader>
+        </AlertDialogHeader>
 
         {isError && (
           <Alert
@@ -91,14 +93,8 @@ export function DeleteLessonDialog({
           </Alert>
         )}
 
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setOpen(false)}
-          >
-            Cancel
-          </Button>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
           <Button
             type="button"
             variant={archive ? 'default' : 'destructive'}
@@ -124,8 +120,8 @@ export function DeleteLessonDialog({
                 ? 'Deleting...'
                 : 'Delete lesson'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

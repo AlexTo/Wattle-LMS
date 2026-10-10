@@ -25,7 +25,9 @@ const confirm = async (
   user: ReturnType<typeof renderWithInstructorApi>['user'],
   name: RegExp,
 ) =>
-  user.click(within(screen.getByRole('dialog')).getByRole('button', { name }));
+  user.click(
+    within(screen.getByRole('alertdialog')).getByRole('button', { name }),
+  );
 
 describe('ModuleVisibilityButton', () => {
   it('publishes a hidden module, saying everything new in it comes too, then refreshes the course', async () => {
@@ -44,13 +46,13 @@ describe('ModuleVisibilityButton', () => {
     await user.click(
       screen.getByRole('button', { name: 'Publish module Module One' }),
     );
-    expect(screen.getByRole('dialog')).toHaveTextContent(
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
       `Students will see "Module One" straight away, together with the new content in it that hasn't been published yet. Anything you hid after students could see it stays hidden.`,
     );
     await confirm(user, /^Publish module$/);
 
     await waitFor(() =>
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument(),
     );
     expect(calls).toEqual([
       {
@@ -78,7 +80,7 @@ describe('ModuleVisibilityButton', () => {
     await user.click(
       screen.getByRole('button', { name: 'Hide module Module One' }),
     );
-    expect(screen.getByRole('dialog')).toHaveTextContent(
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
       'Students will no longer see "Module One" or anything in it.',
     );
     await confirm(user, /^Hide module$/);
@@ -108,7 +110,7 @@ describe('ModuleVisibilityButton', () => {
       screen.getByRole('button', { name: 'Hide module Module One' }),
     );
 
-    expect(screen.getByRole('dialog')).toHaveTextContent(
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
       '"Module One" and everything in it will stay hidden from students when the course is published',
     );
   });
@@ -139,13 +141,13 @@ describe('ModuleVisibilityButton', () => {
     );
     await confirm(user, /^Publish module$/);
 
-    const dialog = screen.getByRole('dialog');
+    const dialog = screen.getByRole('alertdialog');
     await waitFor(() =>
       expect(dialog).toHaveTextContent("Couldn't publish the module"),
     );
     expect(dialog).toHaveTextContent('Restore the course first');
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 });
 
@@ -166,7 +168,7 @@ describe('LessonVisibilityButton', () => {
     await user.click(
       screen.getByRole('button', { name: 'Publish lesson Lesson One' }),
     );
-    expect(screen.getByRole('dialog')).toHaveTextContent(
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
       'Students will see "Lesson One" as long as its module is visible',
     );
     await confirm(user, /^Publish lesson$/);
@@ -202,7 +204,7 @@ describe('ContentItemVisibilityButton', () => {
     await user.click(
       screen.getByRole('button', { name: 'Publish text Intro' }),
     );
-    expect(screen.getByRole('dialog')).toHaveTextContent(
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
       'Students will see "Intro" as long as its lesson and module are visible.',
     );
     await confirm(user, /^Publish text$/);
@@ -225,7 +227,7 @@ describe('ContentItemVisibilityButton', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Hide video Intro' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent(
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
       'Students will no longer see "Intro". Their progress is kept',
     );
     await confirm(user, /^Hide video$/);

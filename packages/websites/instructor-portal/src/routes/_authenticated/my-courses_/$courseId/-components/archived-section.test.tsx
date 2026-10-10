@@ -227,7 +227,7 @@ describe('ArchivedSection', () => {
           name: 'Delete lesson Lesson Two permanently',
         }),
       );
-      const dialog = screen.getByRole('dialog');
+      const dialog = screen.getByRole('alertdialog');
       expect(dialog).toHaveTextContent(
         `"Lesson Two" and everything in it will be deleted for good (2 items). This can't be undone.`,
       );
@@ -236,7 +236,7 @@ describe('ArchivedSection', () => {
       );
 
       await waitFor(() =>
-        expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument(),
       );
       expect(calls).toEqual([
         {
@@ -256,7 +256,7 @@ describe('ArchivedSection', () => {
       );
       await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
       expect(calls).toEqual([]);
     });
 
@@ -276,12 +276,12 @@ describe('ArchivedSection', () => {
         }),
       );
       await user.click(
-        within(screen.getByRole('dialog')).getByRole('button', {
+        within(screen.getByRole('alertdialog')).getByRole('button', {
           name: 'Delete permanently',
         }),
       );
 
-      const dialog = screen.getByRole('dialog');
+      const dialog = screen.getByRole('alertdialog');
       await waitFor(() =>
         expect(dialog).toHaveTextContent("Couldn't delete the lesson"),
       );

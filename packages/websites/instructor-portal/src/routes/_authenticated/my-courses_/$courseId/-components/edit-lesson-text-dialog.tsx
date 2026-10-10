@@ -3,6 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@discava/common-shadcn/components/ui/alert-dialog';
 import { Button } from '@discava/common-shadcn/components/ui/button';
 import {
   Dialog,
@@ -13,6 +23,7 @@ import {
   DialogTrigger,
 } from '@discava/common-shadcn/components/ui/dialog';
 import { Input } from '@discava/common-shadcn/components/ui/input';
+import { Label } from '@discava/common-shadcn/components/ui/label';
 import { Textarea } from '@discava/common-shadcn/components/ui/textarea';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
@@ -126,12 +137,7 @@ export function EditLessonTextDialog({
         )}
 
         <div className="space-y-2">
-          <label
-            className="text-sm font-medium leading-none"
-            htmlFor="lesson-text-title"
-          >
-            Title
-          </label>
+          <Label htmlFor="lesson-text-title">Title</Label>
           <Input
             id="lesson-text-title"
             value={titleValue}
@@ -142,12 +148,7 @@ export function EditLessonTextDialog({
         </div>
 
         <div className="space-y-2">
-          <label
-            className="text-sm font-medium leading-none"
-            htmlFor="lesson-text-description"
-          >
-            Description
-          </label>
+          <Label htmlFor="lesson-text-description">Description</Label>
           <Textarea
             id="lesson-text-description"
             value={descriptionValue}
@@ -219,7 +220,7 @@ export function RemoveLessonTextButton({
   } = useMutation(contentItem.delete.mutationOptions());
 
   return (
-    <Dialog
+    <AlertDialog
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
@@ -228,7 +229,7 @@ export function RemoveLessonTextButton({
         }
       }}
     >
-      <DialogTrigger asChild>
+      <AlertDialogTrigger asChild>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -238,22 +239,24 @@ export function RemoveLessonTextButton({
         >
           <Trash2 />
         </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{archive ? 'Archive text' : 'Remove text'}</DialogTitle>
-          <p className="text-sm text-muted-foreground">
+      </AlertDialogTrigger>
+      <AlertDialogContent className="sm:max-w-md">
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {archive ? 'Archive text' : 'Remove text'}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
             {archive
               ? `Students will no longer see "${title}". Their progress is kept, and the text can be restored.`
               : `Are you sure you want to remove "${title}"? This can't be undone.`}
-          </p>
+          </AlertDialogDescription>
           {archive && studentActivityNote({ students }) && (
             <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
               {studentActivityNote({ students })}. Their progress is kept, and
               counts again if it's restored.
             </p>
           )}
-        </DialogHeader>
+        </AlertDialogHeader>
 
         {isError && (
           <Alert
@@ -266,14 +269,8 @@ export function RemoveLessonTextButton({
           </Alert>
         )}
 
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setOpen(false)}
-          >
-            Cancel
-          </Button>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
           <Button
             type="button"
             variant={archive ? 'default' : 'destructive'}
@@ -304,8 +301,8 @@ export function RemoveLessonTextButton({
                 ? 'Removing...'
                 : 'Remove text'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
