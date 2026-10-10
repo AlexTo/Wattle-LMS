@@ -45,6 +45,22 @@ type InstructorApiIntegrations = ReturnType<
   ReturnType<typeof InstructorApi.defaultIntegrations>['build']
 >;
 
+// Every grant beyond the baseline (table + AppConfig) goes through this, so a
+// procedure missing from INSTRUCTOR_API_DEDICATED_FUNCTIONS fails synth
+// instead of silently handing its permissions to the shared router function
+// that serves every other instructor procedure.
+const privilegedHandler = (
+  integrations: InstructorApiIntegrations,
+  op: keyof InstructorApiIntegrations,
+) => {
+  if (!InstructorApi.hasDedicatedFunction(op)) {
+    throw new Error(
+      `instructor-api operation '${op}' is served by the shared router; add it to INSTRUCTOR_API_DEDICATED_FUNCTIONS before granting it extra permissions`,
+    );
+  }
+  return integrations[op].handler;
+};
+
 export interface ApplicationStackProps extends StackProps {
   /** Settings for the Cognito user pool / identity construct. @default all enabled */
   readonly identity?: IdentityComponentConfig;
@@ -335,10 +351,16 @@ export class ApplicationStack extends Stack {
     // lesson video objects get bucket permissions, not every instructor-api
     // handler (each tRPC operation is its own isolated Lambda).
     lessonMediaBucket.grantPut(
-      instructorApiIntegrations['contentItem.createVideoUploadUrl'].handler,
+      privilegedHandler(
+        instructorApiIntegrations,
+        'contentItem.createVideoUploadUrl',
+      ),
     );
     lessonMediaBucket.grantReadSigningKey(
-      instructorApiIntegrations['contentItem.createVideoUrl'].handler,
+      privilegedHandler(
+        instructorApiIntegrations,
+        'contentItem.createVideoUrl',
+      ),
     );
     // bestEffortDeleteContentItemVideos lists a ready item's whole
     // .../content-items/<id>/ prefix (manifest + segments) before batch-
@@ -348,19 +370,19 @@ export class ApplicationStack extends Stack {
     // gets swallowed by the best-effort error handling, and the old HLS
     // output is silently orphaned forever instead of cleaned up.
     lessonMediaBucket.grantRead(
-      instructorApiIntegrations['contentItem.delete'].handler,
+      privilegedHandler(instructorApiIntegrations, 'contentItem.delete'),
     );
     lessonMediaBucket.grantDelete(
-      instructorApiIntegrations['contentItem.delete'].handler,
+      privilegedHandler(instructorApiIntegrations, 'contentItem.delete'),
     );
     // updateContentItemVideo best-effort-deletes the old S3 object when a
     // video is replaced with a new file. updateContentItemText never touches
     // S3, so it gets no bucket permissions.
     lessonMediaBucket.grantRead(
-      instructorApiIntegrations['contentItem.updateVideo'].handler,
+      privilegedHandler(instructorApiIntegrations, 'contentItem.updateVideo'),
     );
     lessonMediaBucket.grantDelete(
-      instructorApiIntegrations['contentItem.updateVideo'].handler,
+      privilegedHandler(instructorApiIntegrations, 'contentItem.updateVideo'),
     );
     // Deleting a lesson or module cascades to its content items, best-
     // effort-deleting each one's underlying S3 object -- as does every
@@ -372,9 +394,11 @@ export class ApplicationStack extends Stack {
       'lesson.deletePermanently',
       'module.deletePermanently',
     ] as const) {
-      lessonMediaBucket.grantRead(instructorApiIntegrations[procedure].handler);
+      lessonMediaBucket.grantRead(
+        privilegedHandler(instructorApiIntegrations, procedure),
+      );
       lessonMediaBucket.grantDelete(
-        instructorApiIntegrations[procedure].handler,
+        privilegedHandler(instructorApiIntegrations, procedure),
       );
     }
 
@@ -412,23 +436,26 @@ export class ApplicationStack extends Stack {
     // createContentItemVideoUploadUrl now targets this bucket instead of
     // lessonMediaBucket -- the raw upload never sits behind CloudFront.
     lessonMediaUploadBucket.grantPut(
-      instructorApiIntegrations['contentItem.createVideoUploadUrl'].handler,
+      privilegedHandler(
+        instructorApiIntegrations,
+        'contentItem.createVideoUploadUrl',
+      ),
     );
     // createContentItemVideo/updateContentItemVideo check the upload
     // actually exists before recording/submitting a transcode job for it.
     lessonMediaUploadBucket.grantRead(
-      instructorApiIntegrations['contentItem.createVideo'].handler,
+      privilegedHandler(instructorApiIntegrations, 'contentItem.createVideo'),
     );
     lessonMediaUploadBucket.grantRead(
-      instructorApiIntegrations['contentItem.updateVideo'].handler,
+      privilegedHandler(instructorApiIntegrations, 'contentItem.updateVideo'),
     );
     // Which bucket a delete/replace targets now depends on the content
     // item's status, so these handlers need delete on both buckets.
     lessonMediaUploadBucket.grantDelete(
-      instructorApiIntegrations['contentItem.delete'].handler,
+      privilegedHandler(instructorApiIntegrations, 'contentItem.delete'),
     );
     lessonMediaUploadBucket.grantDelete(
-      instructorApiIntegrations['contentItem.updateVideo'].handler,
+      privilegedHandler(instructorApiIntegrations, 'contentItem.updateVideo'),
     );
     for (const procedure of [
       'lesson.delete',
@@ -438,7 +465,7 @@ export class ApplicationStack extends Stack {
       'module.deletePermanently',
     ] as const) {
       lessonMediaUploadBucket.grantDelete(
-        instructorApiIntegrations[procedure].handler,
+        privilegedHandler(instructorApiIntegrations, procedure),
       );
     }
 
@@ -466,8 +493,8 @@ export class ApplicationStack extends Stack {
     instructorApiIntegrations: InstructorApiIntegrations,
   ) {
     const handlers = [
-      instructorApiIntegrations['contentItem.createVideo'].handler,
-      instructorApiIntegrations['contentItem.updateVideo'].handler,
+      privilegedHandler(instructorApiIntegrations, 'contentItem.createVideo'),
+      privilegedHandler(instructorApiIntegrations, 'contentItem.updateVideo'),
     ];
     for (const handler of handlers) {
       // MediaConvert's CreateJob isn't meaningfully resource-scoped for a
@@ -525,15 +552,18 @@ export class ApplicationStack extends Stack {
     instructorApiIntegrations: InstructorApiIntegrations,
   ) {
     return [
-      instructorApiIntegrations['contentItem.createVideo'].handler,
-      instructorApiIntegrations['contentItem.updateVideo'].handler,
-      instructorApiIntegrations['contentItem.delete'].handler,
-      instructorApiIntegrations['lesson.delete'].handler,
-      instructorApiIntegrations['module.delete'].handler,
+      privilegedHandler(instructorApiIntegrations, 'contentItem.createVideo'),
+      privilegedHandler(instructorApiIntegrations, 'contentItem.updateVideo'),
+      privilegedHandler(instructorApiIntegrations, 'contentItem.delete'),
+      privilegedHandler(instructorApiIntegrations, 'lesson.delete'),
+      privilegedHandler(instructorApiIntegrations, 'module.delete'),
       // Permanently deleting an archived record runs the same cascade.
-      instructorApiIntegrations['contentItem.deletePermanently'].handler,
-      instructorApiIntegrations['lesson.deletePermanently'].handler,
-      instructorApiIntegrations['module.deletePermanently'].handler,
+      privilegedHandler(
+        instructorApiIntegrations,
+        'contentItem.deletePermanently',
+      ),
+      privilegedHandler(instructorApiIntegrations, 'lesson.deletePermanently'),
+      privilegedHandler(instructorApiIntegrations, 'module.deletePermanently'),
     ];
   }
 
