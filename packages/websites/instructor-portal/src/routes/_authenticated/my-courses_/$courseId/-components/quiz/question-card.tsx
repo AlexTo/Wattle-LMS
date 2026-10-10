@@ -5,7 +5,13 @@
 
 import { Badge } from '@discava/common-shadcn/components/ui/badge';
 import { Button } from '@discava/common-shadcn/components/ui/button';
+import { Card } from '@discava/common-shadcn/components/ui/card';
 import { Checkbox } from '@discava/common-shadcn/components/ui/checkbox';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@discava/common-shadcn/components/ui/collapsible';
 import {
   Dialog,
   DialogContent,
@@ -207,56 +213,58 @@ export function QuestionCard({
   );
 
   return (
-    <div
-      className={cn(
-        'rounded-xl border bg-card',
-        problems.length > 0 && 'border-destructive/60',
-      )}
-    >
-      <div className="flex items-center gap-2 px-3 py-2">
-        {handle}
-        <span className="text-sm font-semibold">{label}</span>
-        <Badge variant="outline" className="text-[10px]">
-          {question.kind === 'single' ? 'Single choice' : 'Multiple choice'}
-        </Badge>
-        {!expanded && (
-          <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-            {summary}
-          </span>
+    <Collapsible open={expanded} onOpenChange={onToggle} asChild>
+      <Card
+        className={cn(
+          'gap-0 py-0',
+          problems.length > 0 && 'border-destructive/60',
         )}
-        {problems.length > 0 && (
-          <Badge variant="destructive" className="text-[10px]">
-            {problems.length} to fix
+      >
+        <div className="flex items-center gap-2 px-3 py-2">
+          {handle}
+          <span className="text-sm font-semibold">{label}</span>
+          <Badge variant="outline" className="text-[10px]">
+            {question.kind === 'single' ? 'Single choice' : 'Multiple choice'}
           </Badge>
-        )}
-        <div className="ml-auto flex items-center gap-1">
-          {!readOnly && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Remove ${label}`}
-              disabled={!canRemove}
-              onClick={onRemove}
-            >
-              <Trash2 />
-            </Button>
+          {!expanded && (
+            <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+              {summary}
+            </span>
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-expanded={expanded}
-            aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}`}
-            onClick={onToggle}
-          >
-            {expanded ? <ChevronUp /> : <ChevronDown />}
-          </Button>
+          {problems.length > 0 && (
+            <Badge variant="destructive" className="text-[10px]">
+              {problems.length} to fix
+            </Badge>
+          )}
+          <div className="ml-auto flex items-center gap-1">
+            {!readOnly && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remove ${label}`}
+                disabled={!canRemove}
+                onClick={onRemove}
+              >
+                <Trash2 />
+              </Button>
+            )}
+            <CollapsibleTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}`}
+              >
+                {expanded ? <ChevronUp /> : <ChevronDown />}
+              </Button>
+            </CollapsibleTrigger>
+          </div>
         </div>
-      </div>
 
-      {expanded && (
-        <div className="space-y-4 border-t px-4 py-4">
+        {/* Mounted only while open, so a long quiz doesn't run an editor per
+          question. */}
+        <CollapsibleContent className="space-y-4 border-t px-4 py-4">
           {problems.length > 0 && (
             <ul className="list-disc space-y-0.5 pl-5 text-sm text-destructive">
               {problems.map((problem) => (
@@ -270,8 +278,6 @@ export function QuestionCard({
             {readOnly ? (
               <p className="rounded-lg border px-3 py-2 text-sm">{summary}</p>
             ) : (
-              // Mounted only while the card is expanded, so a long quiz
-              // doesn't run an editor per question.
               <RichTextEditor
                 value={question.prompt}
                 onChange={(prompt) => update({ prompt })}
@@ -368,65 +374,68 @@ export function QuestionCard({
               </Button>
             )}
           </div>
-        </div>
-      )}
+        </CollapsibleContent>
 
-      <Dialog open={askWhichToKeep} onOpenChange={setAskWhichToKeep}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Which answer stays correct?</DialogTitle>
-            <DialogDescription>
-              A single choice question has one correct option. Choose the one to
-              keep; the others will be marked incorrect.
-            </DialogDescription>
-          </DialogHeader>
-          <RadioGroup
-            value={keepChoice}
-            onValueChange={setKeepChoice}
-            aria-label="Correct option to keep"
-          >
-            {question.options
-              .filter(({ optionId }) => question.correct.includes(optionId))
-              .map((option) => (
-                <div key={option.optionId} className="flex items-center gap-2">
-                  <RadioGroupItem
-                    value={option.optionId}
-                    id={`keep-${option.optionId}`}
-                  />
-                  <Label
-                    htmlFor={`keep-${option.optionId}`}
-                    className="font-normal"
+        <Dialog open={askWhichToKeep} onOpenChange={setAskWhichToKeep}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Which answer stays correct?</DialogTitle>
+              <DialogDescription>
+                A single choice question has one correct option. Choose the one
+                to keep; the others will be marked incorrect.
+              </DialogDescription>
+            </DialogHeader>
+            <RadioGroup
+              value={keepChoice}
+              onValueChange={setKeepChoice}
+              aria-label="Correct option to keep"
+            >
+              {question.options
+                .filter(({ optionId }) => question.correct.includes(optionId))
+                .map((option) => (
+                  <div
+                    key={option.optionId}
+                    className="flex items-center gap-2"
                   >
-                    {option.text ||
-                      `Option ${question.options.indexOf(option) + 1}`}
-                  </Label>
-                </div>
-              ))}
-          </RadioGroup>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setAskWhichToKeep(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                update({
-                  kind: 'single',
-                  correct: keepChoice ? [keepChoice] : [],
-                });
-                setAskWhichToKeep(false);
-              }}
-            >
-              Switch to single choice
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+                    <RadioGroupItem
+                      value={option.optionId}
+                      id={`keep-${option.optionId}`}
+                    />
+                    <Label
+                      htmlFor={`keep-${option.optionId}`}
+                      className="font-normal"
+                    >
+                      {option.text ||
+                        `Option ${question.options.indexOf(option) + 1}`}
+                    </Label>
+                  </div>
+                ))}
+            </RadioGroup>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setAskWhichToKeep(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  update({
+                    kind: 'single',
+                    correct: keepChoice ? [keepChoice] : [],
+                  });
+                  setAskWhichToKeep(false);
+                }}
+              >
+                Switch to single choice
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </Card>
+    </Collapsible>
   );
 }
 

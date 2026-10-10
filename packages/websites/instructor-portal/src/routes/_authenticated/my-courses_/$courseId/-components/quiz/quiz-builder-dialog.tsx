@@ -23,6 +23,7 @@ import {
 } from '@discava/common-shadcn/components/ui/dialog';
 import { useQuery } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
+import { Spinner } from '../../../../../../components/spinner';
 import { useInstructorApi } from '../../../../../../hooks/useInstructorApi';
 import { QuizBuilder } from './quiz-builder';
 import type { QuizItem } from './quiz-form';
@@ -116,11 +117,15 @@ export function QuizBuilderDialog({
         {/* A quiz opened to edit needs its data first; a new one just created
             keeps its builder while course.view catches up. */}
         {contentItemId && !quiz ? (
-          <p className="pb-6 text-sm text-muted-foreground">
-            {courseQuery.isPending
-              ? 'Loading the quiz...'
-              : "This quiz doesn't exist any more."}
-          </p>
+          courseQuery.isPending ? (
+            <div className="flex justify-center pb-10 pt-4">
+              <Spinner />
+            </div>
+          ) : (
+            <p className="pb-6 text-sm text-muted-foreground">
+              This quiz doesn't exist any more.
+            </p>
+          )
         ) : (
           <QuizBuilder
             key={session}
