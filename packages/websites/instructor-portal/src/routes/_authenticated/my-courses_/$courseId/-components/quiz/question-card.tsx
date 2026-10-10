@@ -9,6 +9,7 @@ import { Checkbox } from '@discava/common-shadcn/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -374,10 +375,10 @@ export function QuestionCard({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Which answer stays correct?</DialogTitle>
-            <p className="text-sm text-muted-foreground">
+            <DialogDescription>
               A single choice question has one correct option. Choose the one to
               keep; the others will be marked incorrect.
-            </p>
+            </DialogDescription>
           </DialogHeader>
           <RadioGroup
             value={keepChoice}
@@ -448,7 +449,7 @@ export function QuestionHandle({
       size="icon-xs"
       aria-label={`Reorder ${label}`}
       disabled={disabled}
-      className="cursor-grab touch-none text-muted-foreground active:cursor-grabbing"
+      className="cursor-grab touch-none text-muted-foreground hover:bg-transparent hover:text-foreground active:cursor-grabbing"
     >
       <GripVertical className="size-4" />
     </Button>

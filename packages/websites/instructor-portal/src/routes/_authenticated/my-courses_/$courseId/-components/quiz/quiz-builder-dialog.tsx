@@ -3,11 +3,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Button } from '@discava/common-shadcn/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@discava/common-shadcn/components/ui/alert-dialog';
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -98,11 +107,11 @@ export function QuizBuilderDialog({
           <DialogTitle>
             {contentItemId ? `Edit ${quiz?.title ?? 'quiz'}` : 'New quiz'}
           </DialogTitle>
-          <p className="text-sm text-muted-foreground">
+          <DialogDescription>
             {module && lesson
               ? `In ${module.title} › ${lesson.title}`
               : 'Questions students answer in this lesson.'}
-          </p>
+          </DialogDescription>
         </DialogHeader>
         {/* A quiz opened to edit needs its data first; a new one just created
             keeps its builder while course.view catches up. */}
@@ -131,28 +140,22 @@ export function QuizBuilderDialog({
           />
         )}
 
-        <Dialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Discard unsaved changes?</DialogTitle>
-              <p className="text-sm text-muted-foreground">
+        <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+          <AlertDialogContent className="sm:max-w-md">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+              <AlertDialogDescription>
                 The changes you made since the last save will be lost.
-              </p>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setConfirmDiscard(false)}
-              >
-                Keep editing
-              </Button>
-              <Button type="button" variant="destructive" onClick={close}>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep editing</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" onClick={close}>
                 Discard changes
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );
