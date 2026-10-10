@@ -2,7 +2,7 @@
  * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import {
   ApiError,
@@ -28,36 +28,6 @@ vi.mock('@dnd-kit/react', () => ({
   }) => {
     dnd.onDragEnd = onDragEnd;
     return children;
-  },
-}));
-// The row links to the quiz builder; these tests render it without a router.
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({
-    to,
-    params,
-    search,
-    children,
-    ...rest
-  }: {
-    to: string;
-    params?: Record<string, string>;
-    search?: Record<string, string | undefined>;
-    children: React.ReactNode;
-  }) => {
-    const path = Object.entries(params ?? {}).reduce(
-      (href, [key, value]) => href.replace(`$${key}`, value),
-      to,
-    );
-    const query = new URLSearchParams(
-      Object.entries(search ?? {}).filter(
-        (entry): entry is [string, string] => entry[1] !== undefined,
-      ),
-    ).toString();
-    return (
-      <a href={query ? `${path}?${query}` : path} {...rest}>
-        {children}
-      </a>
-    );
   },
 }));
 vi.mock('@dnd-kit/react/sortable', () => ({
@@ -232,37 +202,78 @@ describe('LessonContentItemsRow', () => {
     ).toEqual(['Item A', 'Item B', 'Item C']);
   });
 
-  it('shows a quiz with its question count, and links Edit to its builder', () => {
-    renderRow({
-      contentItems: [
-        { ...item('q', 'Module check'), type: 'quiz', questions: [{}, {}, {}] },
-      ],
-    });
+  it('shows a quiz with its question count, and opens it to edit in the builder', async () => {
+    const quiz = {
+      ...item('q', 'Module check'),
+      type: 'quiz',
+      questions: [{}, {}, {}],
+    };
+    const { user } = renderRow(
+      { contentItems: [quiz] },
+      {
+        'course.view': () => ({
+          status: 'published',
+          modules: [
+            {
+              moduleId: 'module-1',
+              title: 'Module One',
+              lessons: [
+                {
+                  lessonId: 'lesson-1',
+                  title: 'Lesson One',
+                  contentItems: [
+                    {
+                      ...quiz,
+                      questions: [],
+                      answerKey: {},
+                      settings: {
+                        passMarkPercent: 70,
+                        attemptsAllowed: null,
+                        shuffleOptions: false,
+                        revealAnswers: 'never',
+                      },
+                      quizVersion: 2,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      },
+    );
 
     expect(screen.getByText('3 questions')).toBeInTheDocument();
     expect(
-      screen.getByRole('link', { name: 'Edit Module check' }),
-    ).toHaveAttribute('href', '/my-courses/course-1/quiz/q');
-    expect(
-      screen.getByRole('button', { name: 'Remove Module check' }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByRole('button', { name: 'Hide quiz Module check' }),
     ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Edit Module check' }));
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Edit Module check',
+    });
+    expect(
+      await within(dialog).findByText('In Module One › Lesson One'),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole('textbox', { name: 'Title' })).toHaveValue(
+      'Module check',
+    );
   });
 
-  it('links Quiz to a new quiz in this lesson', () => {
-    renderRow();
+  it('opens a new quiz in the builder from the Quiz button', async () => {
+    const { user } = renderRow({}, { 'course.view': () => ({ modules: [] }) });
 
-    expect(screen.getByRole('link', { name: 'Quiz' })).toHaveAttribute(
-      'href',
-      '/my-courses/course-1/quiz/new?moduleId=module-1&lessonId=lesson-1',
+    await user.click(screen.getByRole('button', { name: 'Quiz' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'New quiz' });
+    expect(within(dialog).getByRole('textbox', { name: 'Title' })).toHaveValue(
+      '',
     );
   });
 
   it('in an archived course, offers no Quiz button', () => {
     renderRow({ readOnly: true });
 
-    expect(screen.queryByRole('link', { name: 'Quiz' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Quiz' })).toBeNull();
   });
 });

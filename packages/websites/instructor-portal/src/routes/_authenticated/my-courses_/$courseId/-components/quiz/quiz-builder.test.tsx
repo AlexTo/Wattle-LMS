@@ -2,10 +2,8 @@
  * Copyright Discava Contributors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { useQuery } from '@tanstack/react-query';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { useInstructorApi } from '../../../../../../hooks/useInstructorApi';
 import {
   ApiError,
   renderWithInstructorApi,
@@ -35,7 +33,7 @@ vi.mock('@dnd-kit/react/sortable', () => ({
 }));
 // Tiptap needs layout APIs jsdom lacks; a textarea stands in, reading and
 // writing a one-paragraph document.
-vi.mock('../../../$courseId/-components/rich-text-editor', () => ({
+vi.mock('../rich-text-editor', () => ({
   RichTextEditor: ({
     value,
     onChange,
@@ -96,31 +94,19 @@ const existing: QuizItem = {
   quizVersion: 4,
 };
 
-// Watches course.view the way the builder's page does, so invalidating it
-// refetches.
-function WithCourseView({ children }: { children: React.ReactNode }) {
-  const { course } = useInstructorApi();
-  useQuery(course.view.queryOptions({ courseId: keys.courseId }));
-  return children;
-}
-
 const renderBuilder = (
   props: Partial<Parameters<typeof QuizBuilder>[0]> = {},
   handlers = {},
-  { watchCourseView = false } = {},
 ) => {
   const onCreated = vi.fn();
   const onReload = vi.fn();
-  const builder = (
+  const rendered = renderWithInstructorApi(
     <QuizBuilder
       {...keys}
       onCreated={onCreated}
       onReload={onReload}
       {...props}
-    />
-  );
-  const rendered = renderWithInstructorApi(
-    watchCourseView ? <WithCourseView>{builder}</WithCourseView> : builder,
+    />,
     { handlers },
   );
   return { ...rendered, onCreated, onReload };
@@ -135,20 +121,20 @@ const renderExisting = (handlers = {}, props = {}) =>
 const save = () => screen.getByRole('button', { name: /save quiz/i });
 
 describe('QuizBuilder', () => {
-  it('creates a new quiz, then hands back its id', async () => {
+  it('creates a new quiz on the first save, then updates it', async () => {
     const { user, calls, onCreated } = renderBuilder(
       {},
       {
-        'contentItem.createQuiz': () => ({ contentItemId: 'quiz-new' }),
-        'course.view': () => ({}),
+        'contentItem.createQuiz': () => ({
+          contentItemId: 'quiz-new',
+          quizVersion: 1,
+        }),
+        'contentItem.updateQuiz': () => ({
+          contentItemId: 'quiz-new',
+          quizVersion: 2,
+        }),
       },
-      { watchCourseView: true },
     );
-    // What had been called by the time the builder handed back the id.
-    let callsWhenCreated: string[] = [];
-    onCreated.mockImplementation(() => {
-      callsWhenCreated = calls.map(({ path }) => path);
-    });
 
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Check');
     await user.type(
@@ -163,12 +149,7 @@ describe('QuizBuilder', () => {
     await user.click(save());
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('quiz-new'));
-    // The page reads the new quiz from course.view, so that's refetched first.
-    expect(callsWhenCreated).toEqual([
-      'course.view',
-      'contentItem.createQuiz',
-      'course.view',
-    ]);
+    expect(screen.getByText('Saved', { exact: true })).toBeInTheDocument();
     const input = calls.find(({ path }) => path === 'contentItem.createQuiz')
       ?.input as {
       title: string;
@@ -179,12 +160,31 @@ describe('QuizBuilder', () => {
     expect(Object.values(input.answerKey)).toEqual([
       { correctOptionIds: [input.questions[0].options[0].optionId] },
     ]);
+
+    // The next save updates the quiz just created, at the version it got.
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), '!');
+    await user.click(save());
+    await waitFor(() =>
+      expect(calls.map(({ path }) => path)).toEqual([
+        'contentItem.createQuiz',
+        'contentItem.updateQuiz',
+      ]),
+    );
+    expect(calls[1].input).toMatchObject({
+      contentItemId: 'quiz-new',
+      quizVersion: 1,
+      title: 'Check!',
+    });
+    expect(onCreated).toHaveBeenCalledTimes(1);
   });
 
   it('saves an existing quiz against the version it loaded, then the version saved', async () => {
     let version = 4;
     const { user, calls } = renderExisting({
-      'contentItem.updateQuiz': () => ({ quizVersion: ++version }),
+      'contentItem.updateQuiz': () => ({
+        contentItemId: 'quiz-1',
+        quizVersion: ++version,
+      }),
     });
 
     await user.type(screen.getByRole('textbox', { name: 'Title' }), '!');
@@ -270,7 +270,10 @@ describe('QuizBuilder', () => {
 
   it('adds, moves and removes options, keeping which ones are correct', async () => {
     const { user, calls } = renderExisting({
-      'contentItem.updateQuiz': () => ({ quizVersion: 5 }),
+      'contentItem.updateQuiz': () => ({
+        contentItemId: 'quiz-1',
+        quizVersion: 5,
+      }),
     });
 
     await user.click(screen.getByRole('button', { name: 'Add option' }));
@@ -341,7 +344,10 @@ describe('QuizBuilder', () => {
 
   it('reorders questions by drag', async () => {
     const { user, calls } = renderExisting({
-      'contentItem.updateQuiz': () => ({ quizVersion: 5 }),
+      'contentItem.updateQuiz': () => ({
+        contentItemId: 'quiz-1',
+        quizVersion: 5,
+      }),
     });
 
     act(() => {

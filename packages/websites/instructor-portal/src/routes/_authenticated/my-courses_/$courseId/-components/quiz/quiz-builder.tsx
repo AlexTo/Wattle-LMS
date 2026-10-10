@@ -46,6 +46,7 @@ export function QuizBuilder({
   quiz: existing,
   studentActivityCount = 0,
   readOnlyReason,
+  onDirtyChange,
   onCreated,
   onReload,
 }: {
@@ -60,8 +61,10 @@ export function QuizBuilder({
   // Why the quiz can't be edited (an archived course, module, lesson or
   // quiz), or nothing if it can.
   readOnlyReason?: string;
+  // Whether there are unsaved changes, whenever that changes.
+  onDirtyChange?: (dirty: boolean) => void;
   // After the first save of a new quiz, with the id it was given.
-  onCreated: (contentItemId: string) => void;
+  onCreated?: (contentItemId: string) => void;
   // Fetches the quiz again, after a CONFLICT.
   onReload: () => void;
 }) {
@@ -73,6 +76,8 @@ export function QuizBuilder({
   );
   const [quiz, setQuiz] = useState<QuizState>(initial);
   const [saved, setSaved] = useState<QuizState>(initial);
+  // A new quiz has neither until its first save creates it.
+  const [savedId, setSavedId] = useState(contentItemId);
   const [version, setVersion] = useState(existing?.quizVersion);
   const [expanded, setExpanded] = useState<string | undefined>(
     initial.questions[0]?.questionId,
@@ -87,6 +92,10 @@ export function QuizBuilder({
 
   const errors = validateQuiz(quiz);
   const dirty = JSON.stringify(quiz) !== JSON.stringify(saved);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   // Leaving with unsaved changes asks first.
   useEffect(() => {
@@ -125,37 +134,34 @@ export function QuizBuilder({
       return;
     }
     const input = toQuizInput(quiz);
-    const refresh = () =>
-      queryClient.invalidateQueries({
-        queryKey: course.view.queryKey({ courseId }),
-      });
     try {
-      if (contentItemId === undefined || version === undefined) {
-        const created = await createQuiz.mutateAsync({
-          courseId,
-          moduleId,
-          lessonId,
-          ...input,
-        });
-        setSaved(quiz);
-        // The page finds the quiz in course.view, so it has to include the
-        // new quiz before the URL switches to it.
-        await refresh();
-        onCreated(created.contentItemId);
-        return;
+      const result =
+        savedId === undefined || version === undefined
+          ? await createQuiz.mutateAsync({
+              courseId,
+              moduleId,
+              lessonId,
+              ...input,
+            })
+          : await updateQuiz.mutateAsync({
+              courseId,
+              moduleId,
+              lessonId,
+              contentItemId: savedId,
+              quizVersion: version,
+              ...input,
+            });
+      // Once created, later saves update it.
+      if (savedId === undefined) {
+        onCreated?.(result.contentItemId);
       }
-      const updated = await updateQuiz.mutateAsync({
-        courseId,
-        moduleId,
-        lessonId,
-        contentItemId,
-        quizVersion: version,
-        ...input,
-      });
-      setVersion(updated.quizVersion);
+      setSavedId(result.contentItemId);
+      setVersion(result.quizVersion);
       setSaved(quiz);
       setJustSaved(true);
-      void refresh();
+      void queryClient.invalidateQueries({
+        queryKey: course.view.queryKey({ courseId }),
+      });
     } catch {
       // Shown below.
     }

@@ -25,7 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
-import { RichTextEditor } from '../../../$courseId/-components/rich-text-editor';
+import { RichTextEditor } from '../rich-text-editor';
 import {
   EMPTY_DOC,
   MAX_OPTIONS,

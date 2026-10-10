@@ -14,7 +14,6 @@ import {
 } from '@dnd-kit/react';
 import { isSortable, useSortable } from '@dnd-kit/react/sortable';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
 import {
   FileText,
   GripVertical,
@@ -34,6 +33,7 @@ import {
   RemoveLessonTextButton,
 } from './edit-lesson-text-dialog';
 import { HiddenBadge } from './hidden-badge';
+import { QuizBuilderDialog } from './quiz/quiz-builder-dialog';
 import { ContentItemVisibilityButton } from './visibility-buttons';
 
 type ContentItem = {
@@ -236,21 +236,23 @@ export function LessonContentItemsRow({
               draft={draft}
               className="transition-opacity sm:opacity-0 sm:group-hover/resource:opacity-100 focus-visible:opacity-100"
             />
-            <Button
-              asChild
-              variant="ghost"
-              size="icon-sm"
-              className="transition-opacity sm:opacity-0 sm:group-hover/resource:opacity-100 focus-visible:opacity-100"
-            >
-              <Link
-                to="/my-courses/$courseId/quiz/$contentItemId"
-                params={{ courseId, contentItemId: item.contentItemId }}
-                search={{ moduleId: undefined, lessonId: undefined }}
-                aria-label={`Edit ${item.title}`}
-              >
-                <PencilLine />
-              </Link>
-            </Button>
+            <QuizBuilderDialog
+              courseId={courseId}
+              moduleId={moduleId}
+              lessonId={lessonId}
+              contentItemId={item.contentItemId}
+              trigger={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  type="button"
+                  aria-label={`Edit ${item.title}`}
+                  className="transition-opacity sm:opacity-0 sm:group-hover/resource:opacity-100 focus-visible:opacity-100"
+                >
+                  <PencilLine />
+                </Button>
+              }
+            />
             <RemoveLessonTextButton
               courseId={courseId}
               moduleId={moduleId}
@@ -433,15 +435,16 @@ export function LessonContentItemsRow({
               </Button>
             }
           />
-          <Button asChild variant="outline" size="sm">
-            <Link
-              to="/my-courses/$courseId/quiz/$contentItemId"
-              params={{ courseId, contentItemId: 'new' }}
-              search={{ moduleId, lessonId }}
-            >
-              <ListChecks /> Quiz
-            </Link>
-          </Button>
+          <QuizBuilderDialog
+            courseId={courseId}
+            moduleId={moduleId}
+            lessonId={lessonId}
+            trigger={
+              <Button variant="outline" size="sm" type="button">
+                <ListChecks /> Quiz
+              </Button>
+            }
+          />
         </div>
       )}
     </div>
