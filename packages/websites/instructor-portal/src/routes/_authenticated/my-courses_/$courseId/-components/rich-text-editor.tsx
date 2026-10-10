@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Button } from '@discava/common-shadcn/components/ui/button';
-import { cn } from '@discava/common-shadcn/lib/utils';
+import { Toggle } from '@discava/common-shadcn/components/ui/toggle';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Bold, Heading2, Italic, List, ListOrdered } from 'lucide-react';
@@ -105,16 +104,13 @@ function ToolbarButton({
   children: ReactNode;
 }) {
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
+    <Toggle
+      size="sm"
       aria-label={label}
-      aria-pressed={active}
-      className={cn(active && 'bg-secondary text-secondary-foreground')}
-      onClick={onClick}
+      pressed={Boolean(active)}
+      onPressedChange={onClick}
     >
       {children}
-    </Button>
+    </Toggle>
   );
 }

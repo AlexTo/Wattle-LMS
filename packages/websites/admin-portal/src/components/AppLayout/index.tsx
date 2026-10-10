@@ -4,6 +4,10 @@
  */
 
 import {
+  Avatar,
+  AvatarFallback,
+} from '@discava/common-shadcn/components/ui/avatar';
+import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
@@ -11,6 +15,14 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@discava/common-shadcn/components/ui/breadcrumb';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@discava/common-shadcn/components/ui/dropdown-menu';
 import { Separator } from '@discava/common-shadcn/components/ui/separator';
 import {
   SidebarInset,
@@ -19,7 +31,6 @@ import {
 } from '@discava/common-shadcn/components/ui/sidebar';
 import { Link, useLocation, useMatchRoute } from '@tanstack/react-router';
 import * as React from 'react';
-import { useEffect, useRef, useState } from 'react';
 import { useAuth } from 'react-oidc-context';
 import Config from '../../config';
 import { AppSidebar } from '../app-sidebar';
@@ -56,19 +67,6 @@ const getBreadcrumbs = (
 };
 
 const AppLayout = ({ children }: { children: React.ReactNode }) => {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as any)) {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
   const { user, removeUser, signoutRedirect, clearStaleState } = useAuth();
   const [activeBreadcrumbs, setActiveBreadcrumbs] = React.useState<
     { href: string; text: string }[]
@@ -107,29 +105,28 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
               </div>
             </div>
           </div>
-          <div className="ml-auto flex items-center gap-3" ref={menuRef}>
-            <button
-              type="button"
-              onClick={() => setMenuOpen((open) => !open)}
-              className="focus-visible:ring-ring/60 bg-muted text-muted-foreground flex size-10 items-center justify-center rounded-full border border-border/60 font-semibold shadow-sm outline-none transition hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background cursor-pointer"
-              aria-label="Open user menu"
-              aria-expanded={menuOpen}
-            >
-              {(user?.profile?.['cognito:username'] as any)
-                ?.charAt?.(0)
-                ?.toUpperCase?.()}
-            </button>
-            {menuOpen && (
-              <div className="bg-popover text-popover-foreground absolute right-4 top-14 w-36 overflow-hidden rounded-md border shadow-md">
-                <div className="px-3 py-2 text-sm font-semibold">
+          <div className="ml-auto flex items-center gap-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className="focus-visible:ring-ring/60 cursor-pointer rounded-full shadow-sm outline-none transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                aria-label="Open user menu"
+              >
+                <Avatar size="lg" className="border border-border/60">
+                  <AvatarFallback className="font-semibold hover:bg-muted/80">
+                    {(user?.profile?.['cognito:username'] as any)
+                      ?.charAt?.(0)
+                      ?.toUpperCase?.()}
+                  </AvatarFallback>
+                </Avatar>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-36">
+                <DropdownMenuLabel className="font-semibold">
                   Hi, {user?.profile?.['cognito:username'] as any}!
-                </div>
-                <div className="bg-border/70 h-px w-full" role="separator" />
-                <button
-                  type="button"
-                  className="hover:bg-muted w-full px-3 py-2 text-left text-sm cursor-pointer"
-                  onClick={() => {
-                    setMenuOpen(false);
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onSelect={() => {
                     removeUser();
                     signoutRedirect({
                       post_logout_redirect_uri: window.location.origin,
@@ -142,9 +139,9 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
                   }}
                 >
                   Sign out
-                </button>
-              </div>
-            )}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
         <div className="flex flex-1 flex-col gap-6 p-6 pt-4">

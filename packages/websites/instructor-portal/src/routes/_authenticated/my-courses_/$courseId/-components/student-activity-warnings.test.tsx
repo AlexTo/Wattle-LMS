@@ -23,7 +23,7 @@ describe('student activity warnings on archive', () => {
       />,
     );
     await user.click(screen.getByRole('button', { name: 'Remove' }));
-    return screen.getByRole('dialog');
+    return screen.getByRole('alertdialog');
   };
 
   it('a module: how many of its items students have used', async () => {
@@ -59,7 +59,7 @@ describe('student activity warnings on archive', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Remove Intro' }));
 
-    expect(screen.getByRole('dialog')).toHaveTextContent(
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
       '1 student has used it.',
     );
   });

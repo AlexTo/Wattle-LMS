@@ -3,15 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Button } from '@discava/common-shadcn/components/ui/button';
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@discava/common-shadcn/components/ui/dialog';
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@discava/common-shadcn/components/ui/alert-dialog';
+import { Button } from '@discava/common-shadcn/components/ui/button';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Archive, RotateCcw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -317,7 +319,7 @@ function DeletePermanentlyDialog({
   }
 
   return (
-    <Dialog
+    <AlertDialog
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
@@ -326,7 +328,7 @@ function DeletePermanentlyDialog({
         }
       }}
     >
-      <DialogTrigger asChild>
+      <AlertDialogTrigger asChild>
         <Button
           type="button"
           variant="ghost"
@@ -335,18 +337,18 @@ function DeletePermanentlyDialog({
         >
           <Trash2 /> Delete permanently
         </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Delete {entry.noun} permanently</DialogTitle>
-          <p className="text-sm text-muted-foreground">
+      </AlertDialogTrigger>
+      <AlertDialogContent className="sm:max-w-md">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {entry.noun} permanently</AlertDialogTitle>
+          <AlertDialogDescription>
             "{entry.title}"
             {entry.kind === 'item' ? '' : ' and everything in it'} will be
             deleted for good
             {entry.kind === 'item' ? '' : ` (${entry.contents})`}. This can't be
             undone.
-          </p>
-        </DialogHeader>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
 
         {isError && (
           <Alert type="error" header={`Couldn't delete the ${entry.noun}`}>
@@ -354,14 +356,8 @@ function DeletePermanentlyDialog({
           </Alert>
         )}
 
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setOpen(false)}
-          >
-            Cancel
-          </Button>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
           <Button
             type="button"
             variant="destructive"
@@ -378,8 +374,8 @@ function DeletePermanentlyDialog({
           >
             {isPending ? 'Deleting...' : 'Delete permanently'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

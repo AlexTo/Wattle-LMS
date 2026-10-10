@@ -20,6 +20,7 @@ import {
   DialogTrigger,
 } from '@discava/common-shadcn/components/ui/dialog';
 import { Input } from '@discava/common-shadcn/components/ui/input';
+import { Label } from '@discava/common-shadcn/components/ui/label';
 import { Textarea } from '@discava/common-shadcn/components/ui/textarea';
 import { useForm } from '@tanstack/react-form';
 import { useMutation } from '@tanstack/react-query';
@@ -29,8 +30,6 @@ import { type ReactNode, useState } from 'react';
 import { z } from 'zod';
 import { useInstructorApi } from '../hooks/useInstructorApi';
 import { Alert } from './alert';
-
-const labelClassName = 'text-sm font-medium leading-none';
 
 const courseFormSchema = z.object({
   title: z.string().trim().min(1, 'Course title is required').max(200),
@@ -122,9 +121,7 @@ export function CreateCourseDialog({ trigger }: { trigger: ReactNode }) {
                   const error = field.state.meta.errors[0];
                   return (
                     <div className="space-y-2">
-                      <label className={labelClassName} htmlFor={field.name}>
-                        Course title
-                      </label>
+                      <Label htmlFor={field.name}>Course title</Label>
                       <Input
                         id={field.name}
                         name={field.name}
@@ -155,9 +152,7 @@ export function CreateCourseDialog({ trigger }: { trigger: ReactNode }) {
                   const error = field.state.meta.errors[0];
                   return (
                     <div className="space-y-2">
-                      <label className={labelClassName} htmlFor={field.name}>
-                        Course summary
-                      </label>
+                      <Label htmlFor={field.name}>Course summary</Label>
                       <Textarea
                         id={field.name}
                         name={field.name}

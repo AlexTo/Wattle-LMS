@@ -3,15 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Button } from '@discava/common-shadcn/components/ui/button';
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@discava/common-shadcn/components/ui/dialog';
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@discava/common-shadcn/components/ui/alert-dialog';
+import { Button } from '@discava/common-shadcn/components/ui/button';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
 import { Alert } from '../../../../../components/alert';
@@ -50,7 +52,7 @@ export function DeleteModuleDialog({
   } = useMutation(module.delete.mutationOptions());
 
   return (
-    <Dialog
+    <AlertDialog
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
@@ -59,25 +61,25 @@ export function DeleteModuleDialog({
         }
       }}
     >
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
+      <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
+      <AlertDialogContent className="sm:max-w-md">
+        <AlertDialogHeader>
+          <AlertDialogTitle>
             {archive ? 'Archive module' : 'Delete module'}
-          </DialogTitle>
+          </AlertDialogTitle>
           {archive ? (
-            <p className="text-sm text-muted-foreground">
+            <AlertDialogDescription>
               Students will no longer see "{title}" or anything in it. Their
               progress and results are kept, and the module can be restored.
-            </p>
+            </AlertDialogDescription>
           ) : (
-            <p className="text-sm text-muted-foreground">
+            <AlertDialogDescription>
               Are you sure you want to delete "{title}"?{' '}
               {lessonCount > 0
                 ? `This will also delete ${lessonCount} ${lessonCount === 1 ? 'lesson' : 'lessons'} inside it. `
                 : ''}
               This can't be undone.
-            </p>
+            </AlertDialogDescription>
           )}
           {archive && studentActivityNote({ items: usedItems }) && (
             <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
@@ -85,7 +87,7 @@ export function DeleteModuleDialog({
               kept, and counts again if it's restored.
             </p>
           )}
-        </DialogHeader>
+        </AlertDialogHeader>
 
         {isError && (
           <Alert
@@ -100,14 +102,8 @@ export function DeleteModuleDialog({
           </Alert>
         )}
 
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setOpen(false)}
-          >
-            Cancel
-          </Button>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
           <Button
             type="button"
             variant={archive ? 'default' : 'destructive'}
@@ -133,8 +129,8 @@ export function DeleteModuleDialog({
                 ? 'Deleting...'
                 : 'Delete module'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

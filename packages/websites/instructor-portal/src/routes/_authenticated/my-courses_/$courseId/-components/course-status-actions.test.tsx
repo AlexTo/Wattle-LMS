@@ -56,12 +56,12 @@ describe('CourseStatusActions', () => {
       const { calls, user } = renderActions('draft');
 
       await user.click(screen.getByRole('button', { name: 'Publish' }));
-      expect(screen.getByRole('dialog')).toHaveTextContent(
+      expect(screen.getByRole('alertdialog')).toHaveTextContent(
         'Students will be able to see "Intro to DynamoDB"',
       );
       await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
       expect(calls).toEqual([]);
     });
 
@@ -74,13 +74,13 @@ describe('CourseStatusActions', () => {
 
       await user.click(screen.getByRole('button', { name: 'Publish' }));
       await user.click(
-        within(screen.getByRole('dialog')).getByRole('button', {
+        within(screen.getByRole('alertdialog')).getByRole('button', {
           name: 'Publish',
         }),
       );
 
       await waitFor(() =>
-        expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument(),
       );
       expect(calls).toEqual([
         { path: 'course.publish', input: { courseId: COURSE_ID } },
@@ -105,7 +105,7 @@ describe('CourseStatusActions', () => {
         screen.getAllByRole('button', { name: 'Publish' }).at(-1)!,
       );
 
-      const dialog = screen.getByRole('dialog');
+      const dialog = screen.getByRole('alertdialog');
       await waitFor(() =>
         expect(dialog).toHaveTextContent("Couldn't publish the course"),
       );

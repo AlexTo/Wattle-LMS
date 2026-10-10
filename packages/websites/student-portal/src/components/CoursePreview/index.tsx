@@ -12,6 +12,11 @@ import {
   CardTitle,
 } from '@discava/common-shadcn/components/ui/card';
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@discava/common-shadcn/components/ui/collapsible';
+import {
   Dialog,
   DialogClose,
   DialogContent,
@@ -162,50 +167,52 @@ export function CoursePreview({
                 ? expandedModuleId === module.moduleId
                 : moduleIndex === 0;
               return (
-                <Card
+                <Collapsible
                   key={module.moduleId}
-                  className="gap-0 overflow-hidden py-0"
+                  asChild
+                  open={isExpanded}
+                  onOpenChange={(open) =>
+                    setExpandedModuleId(open ? module.moduleId : undefined)
+                  }
                 >
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-muted/40 sm:px-5"
-                    aria-expanded={isExpanded}
-                    onClick={() =>
-                      setExpandedModuleId(
-                        isExpanded ? undefined : module.moduleId,
-                      )
-                    }
-                  >
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold">
-                      {moduleIndex + 1}
-                    </span>
-                    <span className="font-semibold">{module.title}</span>
-                    <Badge
-                      variant="outline"
-                      className="ml-1 hidden sm:inline-flex"
-                    >
-                      {module.lessons.length}{' '}
-                      {module.lessons.length === 1 ? 'lesson' : 'lessons'}
-                    </Badge>
-                    <ChevronDown
-                      className={`ml-auto size-4 shrink-0 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                      aria-hidden="true"
-                    />
-                  </button>
-                  {isExpanded && (
-                    <CardContent className="border-t p-0">
-                      {module.lessons.map((lesson) => (
-                        <div
-                          key={lesson.lessonId}
-                          className="flex items-center gap-3 border-b px-4 py-2.5 last:border-b-0 sm:pl-12 sm:pr-5"
+                  <Card className="gap-0 overflow-hidden py-0">
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-muted/40 sm:px-5"
+                      >
+                        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold">
+                          {moduleIndex + 1}
+                        </span>
+                        <span className="font-semibold">{module.title}</span>
+                        <Badge
+                          variant="outline"
+                          className="ml-1 hidden sm:inline-flex"
                         >
-                          <FileText className="size-4 shrink-0 text-muted-foreground" />
-                          <span className="text-sm">{lesson.title}</span>
-                        </div>
-                      ))}
-                    </CardContent>
-                  )}
-                </Card>
+                          {module.lessons.length}{' '}
+                          {module.lessons.length === 1 ? 'lesson' : 'lessons'}
+                        </Badge>
+                        <ChevronDown
+                          className={`ml-auto size-4 shrink-0 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent asChild>
+                      <CardContent className="border-t p-0">
+                        {module.lessons.map((lesson) => (
+                          <div
+                            key={lesson.lessonId}
+                            className="flex items-center gap-3 border-b px-4 py-2.5 last:border-b-0 sm:pl-12 sm:pr-5"
+                          >
+                            <FileText className="size-4 shrink-0 text-muted-foreground" />
+                            <span className="text-sm">{lesson.title}</span>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
               );
             })}
           </div>
