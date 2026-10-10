@@ -6,6 +6,16 @@
 import { Badge } from '@discava/common-shadcn/components/ui/badge';
 import { Button } from '@discava/common-shadcn/components/ui/button';
 import { Card, CardContent } from '@discava/common-shadcn/components/ui/card';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@discava/common-shadcn/components/ui/collapsible';
+import { Label } from '@discava/common-shadcn/components/ui/label';
+import {
+  RadioGroup,
+  RadioGroupItem,
+} from '@discava/common-shadcn/components/ui/radio-group';
 import { Link } from '@tanstack/react-router';
 import {
   AlertCircle,
@@ -14,7 +24,6 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronDown,
-  Circle,
   CircleCheck,
   Clock3,
   Download,
@@ -399,18 +408,23 @@ function LessonBody({
         <Card className="border-primary/20">
           <CardContent className="space-y-4">
             <p className="font-medium">{lesson.question}</p>
-            <div className="space-y-2">
+            <RadioGroup
+              className="gap-2"
+              value={selected === undefined ? '' : String(selected)}
+              onValueChange={(value) => onSelectOption(Number(value))}
+              disabled={submitted}
+              aria-label={lesson.question}
+            >
               {lesson.options.map((option, optionIndex) => {
+                const id = `${lesson.lessonId}-option-${optionIndex}`;
                 const isSelected = selected === optionIndex;
                 const isRightAnswer = optionIndex === lesson.correctIndex;
                 const showCorrectness = submitted && isSelected;
                 return (
-                  <button
+                  <Label
                     key={option}
-                    type="button"
-                    disabled={submitted}
-                    onClick={() => onSelectOption(optionIndex)}
-                    className={`flex w-full items-center gap-3 rounded-lg border px-3.5 py-2.5 text-left text-sm transition-colors disabled:cursor-not-allowed ${
+                    htmlFor={id}
+                    className={`cursor-pointer gap-3 rounded-lg border px-3.5 py-2.5 font-normal leading-normal transition-colors ${submitted ? 'cursor-not-allowed' : ''} ${
                       showCorrectness && isRightAnswer
                         ? 'border-emerald-500/50 bg-emerald-50 dark:bg-emerald-950/30'
                         : showCorrectness
@@ -420,16 +434,12 @@ function LessonBody({
                             : 'hover:bg-muted/50'
                     }`}
                   >
-                    {isSelected ? (
-                      <CircleCheck className="size-4 shrink-0 text-primary" />
-                    ) : (
-                      <Circle className="size-4 shrink-0 text-muted-foreground" />
-                    )}
+                    <RadioGroupItem id={id} value={String(optionIndex)} />
                     {option}
-                  </button>
+                  </Label>
                 );
               })}
-            </div>
+            </RadioGroup>
             {submitted ? (
               <div
                 className={`flex items-center gap-2 rounded-lg px-3.5 py-2.5 text-sm font-medium ${
@@ -596,67 +606,71 @@ export function CourseContent({ courseCode }: { courseCode: string }) {
               completedLessonIds.has(lesson.lessonId),
             ).length;
             return (
-              <Card
+              <Collapsible
                 key={module.moduleId}
-                className="gap-0 overflow-hidden py-0"
+                asChild
+                open={isExpanded}
+                onOpenChange={() => toggleModuleExpanded(module.moduleId)}
               >
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-muted/40"
-                  aria-expanded={isExpanded}
-                  onClick={() => toggleModuleExpanded(module.moduleId)}
-                >
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold">
-                    {moduleIndex + 1}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold">
-                      {module.title}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {completedInModule}/{module.lessons.length} complete
-                    </span>
-                  </span>
-                  <ChevronDown
-                    className={`size-4 shrink-0 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                    aria-hidden="true"
-                  />
-                </button>
-                {isExpanded && (
-                  <CardContent className="border-t p-0">
-                    {module.lessons.map((lesson) => {
-                      const LessonIcon = lessonTypeMeta[lesson.type].icon;
-                      const isActive = lesson.lessonId === activeLessonId;
-                      const isComplete = completedLessonIds.has(
-                        lesson.lessonId,
-                      );
-                      return (
-                        <button
-                          key={lesson.lessonId}
-                          type="button"
-                          onClick={() => goToLesson(lesson.lessonId)}
-                          aria-current={isActive}
-                          className={`flex w-full items-center gap-3 border-b px-4 py-2.5 text-left last:border-b-0 sm:pl-5 sm:pr-4 ${isActive ? 'bg-primary/5' : 'hover:bg-muted/40'}`}
-                        >
-                          {isComplete ? (
-                            <CircleCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                          ) : (
-                            <LessonIcon className="size-4 shrink-0 text-muted-foreground" />
-                          )}
-                          <span
-                            className={`flex-1 truncate text-sm ${isActive ? 'font-medium text-foreground' : 'text-foreground/90'}`}
+                <Card className="gap-0 overflow-hidden py-0">
+                  <CollapsibleTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-muted/40"
+                    >
+                      <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold">
+                        {moduleIndex + 1}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-semibold">
+                          {module.title}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {completedInModule}/{module.lessons.length} complete
+                        </span>
+                      </span>
+                      <ChevronDown
+                        className={`size-4 shrink-0 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent asChild>
+                    <CardContent className="border-t p-0">
+                      {module.lessons.map((lesson) => {
+                        const LessonIcon = lessonTypeMeta[lesson.type].icon;
+                        const isActive = lesson.lessonId === activeLessonId;
+                        const isComplete = completedLessonIds.has(
+                          lesson.lessonId,
+                        );
+                        return (
+                          <button
+                            key={lesson.lessonId}
+                            type="button"
+                            onClick={() => goToLesson(lesson.lessonId)}
+                            aria-current={isActive}
+                            className={`flex w-full items-center gap-3 border-b px-4 py-2.5 text-left last:border-b-0 sm:pl-5 sm:pr-4 ${isActive ? 'bg-primary/5' : 'hover:bg-muted/40'}`}
                           >
-                            {lesson.title}
-                          </span>
-                          <span className="shrink-0 text-xs text-muted-foreground">
-                            {lesson.minutes} min
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </CardContent>
-                )}
-              </Card>
+                            {isComplete ? (
+                              <CircleCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                            ) : (
+                              <LessonIcon className="size-4 shrink-0 text-muted-foreground" />
+                            )}
+                            <span
+                              className={`flex-1 truncate text-sm ${isActive ? 'font-medium text-foreground' : 'text-foreground/90'}`}
+                            >
+                              {lesson.title}
+                            </span>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {lesson.minutes} min
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </CardContent>
+                  </CollapsibleContent>
+                </Card>
+              </Collapsible>
             );
           })}
         </section>

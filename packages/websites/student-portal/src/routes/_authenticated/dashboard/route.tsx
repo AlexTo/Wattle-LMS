@@ -219,13 +219,15 @@ function RouteComponent() {
               <p className="text-lg font-semibold">3 week streak</p>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button
+                  <Button
                     type="button"
-                    className="text-muted-foreground transition-colors hover:text-foreground"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="text-muted-foreground hover:text-foreground"
                     aria-label="About weekly learning streaks"
                   >
                     <Info className="size-4" />
-                  </button>
+                  </Button>
                 </TooltipTrigger>
                 <TooltipContent>
                   Complete learning on at least 3 days each week to continue
@@ -318,7 +320,7 @@ function RouteComponent() {
                     <div className="min-w-0">
                       <Badge
                         variant={task.urgent ? 'destructive' : 'secondary'}
-                        className={`mb-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${task.urgent ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300' : 'bg-primary/10 text-primary'}`}
+                        className={`mb-1 text-[10px] font-bold uppercase tracking-wide ${task.urgent ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300' : 'bg-primary/10 text-primary'}`}
                       >
                         {task.status}
                       </Badge>
